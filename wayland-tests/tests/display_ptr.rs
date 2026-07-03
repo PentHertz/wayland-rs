@@ -1,7 +1,10 @@
 #![cfg(all(feature = "client_system", feature = "libwayland_client_1_23"))]
 
+#[macro_use]
+mod helpers;
+
+use helpers::{globals, wayc, TestServer};
 use wayc::Proxy;
-use wayland_tests::{TestServer, globals, wayc};
 
 #[test]
 fn client_objectid_display_ptr() {
@@ -9,8 +12,7 @@ fn client_objectid_display_ptr() {
 
     let (_s_client, client) = server.add_client::<ClientHandler>();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     registry.id().display_ptr().unwrap();
 }
@@ -24,5 +26,9 @@ impl AsMut<globals::GlobalList> for ClientHandler {
         &mut self.globals
     }
 }
+
+wayc::delegate_dispatch!(ClientHandler:
+    [wayc::protocol::wl_registry::WlRegistry: ()] => globals::GlobalList
+);
 
 struct ServerHandler;

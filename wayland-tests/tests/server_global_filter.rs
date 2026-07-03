@@ -1,4 +1,7 @@
-use wayland_tests::{TestServer, globals, roundtrip, server_ignore_impl, wayc, ways};
+#[macro_use]
+mod helpers;
+
+use helpers::{globals, roundtrip, wayc, ways, TestServer};
 
 use ways::protocol::{wl_compositor, wl_output, wl_shm};
 
@@ -23,7 +26,7 @@ fn global_filter() {
     let (_, mut client) = server.add_client_with_data(Arc::new(MyClientData { privileged: false }));
     let mut client_ddata = ClientHandler::new();
 
-    client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
@@ -33,7 +36,7 @@ fn global_filter() {
         server.add_client_with_data(Arc::new(MyClientData { privileged: true }));
     let mut priv_client_ddata = ClientHandler::new();
 
-    priv_client.display.get_registry(&priv_client.event_queue.handle(), globals::GlobalListData);
+    priv_client.display.get_registry(&priv_client.event_queue.handle(), ());
 
     roundtrip(&mut priv_client, &mut server, &mut priv_client_ddata, &mut server_ddata).unwrap();
 
@@ -74,25 +77,22 @@ fn global_filter_try_force() {
 
     // privileged client can bind it
 
-    let priv_registry = priv_client
-        .display
-        .get_registry(&priv_client.event_queue.handle(), globals::GlobalListData);
+    let priv_registry = priv_client.display.get_registry(&priv_client.event_queue.handle(), ());
     priv_registry.bind::<wayc::protocol::wl_output::WlOutput, _, _>(
         1,
         1,
         &priv_client.event_queue.handle(),
-        wayc::NoopIgnore,
+        (),
     );
     roundtrip(&mut priv_client, &mut server, &mut priv_client_ddata, &mut server_ddata).unwrap();
 
     // unprivileged client cannot
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
     registry.bind::<wayc::protocol::wl_output::WlOutput, _, _>(
         1,
         1,
         &client.event_queue.handle(),
-        wayc::NoopIgnore,
+        (),
     );
 
     assert!(roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).is_err());
@@ -114,47 +114,65 @@ impl AsMut<globals::GlobalList> for ClientHandler {
     }
 }
 
+wayc::delegate_dispatch!(ClientHandler:
+    [wayc::protocol::wl_registry::WlRegistry: ()] => globals::GlobalList
+);
+
+client_ignore_impl!(ClientHandler => [
+    wayc::protocol::wl_compositor::WlCompositor,
+    wayc::protocol::wl_shm::WlShm,
+    wayc::protocol::wl_output::WlOutput
+]);
+
 struct ServerHandler;
 
-impl ways::GlobalDispatch<wl_compositor::WlCompositor, ServerHandler> for () {
+impl ways::GlobalDispatch<wl_compositor::WlCompositor, ()> for ServerHandler {
     fn bind(
-        &self,
-        _: &mut ServerHandler,
+        _: &mut Self,
         _: &ways::DisplayHandle,
         _: &ways::Client,
         resource: ways::New<wl_compositor::WlCompositor>,
-        data_init: &mut ways::DataInit<'_, ServerHandler>,
+        _: &(),
+        data_init: &mut ways::DataInit<'_, Self>,
     ) {
         data_init.init(resource, ());
     }
+
+    fn can_view(_: ways::Client, _: &()) -> bool {
+        true
+    }
 }
 
-impl ways::GlobalDispatch<wl_shm::WlShm, ServerHandler> for () {
+impl ways::GlobalDispatch<wl_shm::WlShm, ()> for ServerHandler {
     fn bind(
-        &self,
-        _: &mut ServerHandler,
+        _: &mut Self,
         _: &ways::DisplayHandle,
         _: &ways::Client,
         resource: ways::New<wl_shm::WlShm>,
-        data_init: &mut ways::DataInit<'_, ServerHandler>,
+        _: &(),
+        data_init: &mut ways::DataInit<'_, Self>,
     ) {
         data_init.init(resource, ());
+    }
+
+    fn can_view(_: ways::Client, _: &()) -> bool {
+        true
     }
 }
 
-impl ways::GlobalDispatch<wl_output::WlOutput, ServerHandler> for () {
+impl ways::GlobalDispatch<wl_output::WlOutput, ()> for ServerHandler {
     fn bind(
-        &self,
-        _: &mut ServerHandler,
+        _: &mut Self,
         _: &ways::DisplayHandle,
         _: &ways::Client,
         resource: ways::New<wl_output::WlOutput>,
-        data_init: &mut ways::DataInit<'_, ServerHandler>,
+        _: &(),
+        data_init: &mut ways::DataInit<'_, Self>,
     ) {
         data_init.init(resource, ());
     }
 
-    fn can_view(&self, client: &ways::Client) -> bool {
+    fn can_view(client: ways::Client, _: &()) -> bool {
         client.get_data::<MyClientData>().unwrap().privileged
     }
 }

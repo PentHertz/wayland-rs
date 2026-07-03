@@ -41,9 +41,10 @@
 //! managing the newly created object.
 //!
 //! However, implementing all those traits on your own is a lot of (often uninteresting) work. To make this
-//! easier another library (such as Smithay's Client Toolkit) can provide generic [`Dispatch`] implementations
-//! for a user-data type it defines, that you can reuse in your own appSee the documentation of those traits
-//! for details.
+//! easier a composition mechanism is provided using the [`delegate_dispatch!`] macro. This way, another
+//! library (such as Smithay's Client Toolkit) can provide generic [`Dispatch`] implementations that you
+//! can reuse in your own app by delegating those objects to that provided implementation. See the
+//! documentation of those traits and macro for details.
 //!
 //! ## Getting started example
 //!
@@ -66,12 +67,12 @@
 //! //
 //! // In this example, we just use () as we don't have any value to associate. See
 //! // the `Dispatch` documentation for more details about this.
-//! impl Dispatch<wl_registry::WlRegistry, AppData> for () {
+//! impl Dispatch<wl_registry::WlRegistry, ()> for AppData {
 //!     fn event(
-//!         &self,
-//!         _state: &mut AppData,
+//!         _state: &mut Self,
 //!         _: &wl_registry::WlRegistry,
 //!         event: wl_registry::Event,
+//!         _: &(),
 //!         _: &Connection,
 //!         _: &QueueHandle<AppData>,
 //!     ) {
@@ -191,10 +192,10 @@ pub mod backend {
     pub use wayland_backend::smallvec;
 }
 
+pub use wayland_backend::protocol::WEnum;
+
 pub use conn::{ConnectError, Connection};
-pub use event_queue::{
-    Dispatch, EventQueue, Noop, NoopIgnore, QueueFreezeGuard, QueueHandle, QueueProxyData,
-};
+pub use event_queue::{Dispatch, EventQueue, QueueFreezeGuard, QueueHandle, QueueProxyData};
 
 // internal imports for dispatching logging depending on the `log` feature
 #[cfg(feature = "log")]
@@ -221,7 +222,7 @@ pub mod protocol {
 }
 
 /// Trait representing a Wayland interface
-pub trait Proxy: Clone + std::fmt::Debug + Sized + 'static {
+pub trait Proxy: Clone + std::fmt::Debug + Sized {
     /// The event enum for this interface
     type Event;
     /// The request enum for this interface
@@ -246,9 +247,7 @@ pub trait Proxy: Clone + std::fmt::Debug + Sized + 'static {
     }
 
     /// Access the user-data associated with this object
-    fn data<U: Send + Sync + 'static>(&self) -> Option<&U> {
-        self.object_data()?.data_as_any().downcast_ref::<U>()
-    }
+    fn data<U: Send + Sync + 'static>(&self) -> Option<&U>;
 
     /// Access the raw data associated with this object.
     ///
@@ -278,12 +277,7 @@ pub trait Proxy: Clone + std::fmt::Debug + Sized + 'static {
     ///
     /// It is an error to use this function on requests that create objects; use
     /// [`send_constructor()`][Self::send_constructor()] for such requests.
-    fn send_request(&self, req: Self::Request<'_>) -> Result<(), InvalidId> {
-        let conn = Connection::from_backend(self.backend().upgrade().ok_or(InvalidId)?);
-        let id = conn.send_request(self, req, None)?;
-        debug_assert!(id.is_null());
-        Ok(())
-    }
+    fn send_request(&self, req: Self::Request<'_>) -> Result<(), InvalidId>;
 
     /// Send a request for this object that creates another object.
     ///
@@ -293,11 +287,7 @@ pub trait Proxy: Clone + std::fmt::Debug + Sized + 'static {
         &self,
         req: Self::Request<'_>,
         data: Arc<dyn ObjectData>,
-    ) -> Result<I, InvalidId> {
-        let conn = Connection::from_backend(self.backend().upgrade().ok_or(InvalidId)?);
-        let id = conn.send_request(self, req, Some(data))?;
-        Proxy::from_id(&conn, id)
-    }
+    ) -> Result<I, InvalidId>;
 
     /// Parse a event for this object
     ///

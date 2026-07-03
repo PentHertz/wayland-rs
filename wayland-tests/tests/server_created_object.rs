@@ -1,20 +1,21 @@
-use wayland_tests::{
-    TestServer, globals, roundtrip, server_ignore_global_impl, server_ignore_impl, wayc, ways,
-};
+#[macro_use]
+mod helpers;
 
-use ways::Resource;
+use helpers::{globals, roundtrip, wayc, ways, TestServer};
+
 use ways::protocol::wl_data_device::WlDataDevice as ServerDD;
 use ways::protocol::wl_data_device_manager::{
     Request as SDDMReq, WlDataDeviceManager as ServerDDMgr,
 };
 use ways::protocol::wl_data_offer::WlDataOffer as ServerDO;
 use ways::protocol::wl_seat::WlSeat as ServerSeat;
+use ways::Resource;
 
-use wayc::Proxy;
 use wayc::protocol::wl_data_device::Event as CDDEvt;
 use wayc::protocol::wl_data_device_manager::WlDataDeviceManager as ClientDDMgr;
 use wayc::protocol::wl_data_offer::WlDataOffer as ClientDO;
 use wayc::protocol::wl_seat::WlSeat as ClientSeat;
+use wayc::Proxy;
 
 #[test]
 fn data_offer() {
@@ -26,18 +27,17 @@ fn data_offer() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
     let seat = client_ddata
         .globals
-        .bind::<ClientSeat, _, _>(&client.event_queue.handle(), &registry, 1..=1, wayc::NoopIgnore)
+        .bind::<ClientSeat, _, _>(&client.event_queue.handle(), &registry, 1..=1, ())
         .unwrap();
     let ddmgr = client_ddata
         .globals
-        .bind::<ClientDDMgr, _, _>(&client.event_queue.handle(), &registry, 3..=3, wayc::NoopIgnore)
+        .bind::<ClientDDMgr, _, _>(&client.event_queue.handle(), &registry, 3..=3, ())
         .unwrap();
 
     ddmgr.get_data_device(&seat, &client.event_queue.handle(), ());
@@ -73,18 +73,17 @@ fn server_id_reuse() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
     let seat = client_ddata
         .globals
-        .bind::<ClientSeat, _, _>(&client.event_queue.handle(), &registry, 1..=1, wayc::NoopIgnore)
+        .bind::<ClientSeat, _, _>(&client.event_queue.handle(), &registry, 1..=1, ())
         .unwrap();
     let ddmgr = client_ddata
         .globals
-        .bind::<ClientDDMgr, _, _>(&client.event_queue.handle(), &registry, 3..=3, wayc::NoopIgnore)
+        .bind::<ClientDDMgr, _, _>(&client.event_queue.handle(), &registry, 3..=3, ())
         .unwrap();
 
     ddmgr.get_data_device(&seat, &client.event_queue.handle(), ());
@@ -155,18 +154,17 @@ fn server_created_race() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
     let seat = client_ddata
         .globals
-        .bind::<ClientSeat, _, _>(&client.event_queue.handle(), &registry, 1..=1, wayc::NoopIgnore)
+        .bind::<ClientSeat, _, _>(&client.event_queue.handle(), &registry, 1..=1, ())
         .unwrap();
     let ddmgr = client_ddata
         .globals
-        .bind::<ClientDDMgr, _, _>(&client.event_queue.handle(), &registry, 3..=3, wayc::NoopIgnore)
+        .bind::<ClientDDMgr, _, _>(&client.event_queue.handle(), &registry, 3..=3, ())
         .unwrap();
 
     ddmgr.get_data_device(&seat, &client.event_queue.handle(), ());
@@ -219,18 +217,17 @@ fn creation_destruction_race() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
     let seat = client_ddata
         .globals
-        .bind::<ClientSeat, _, _>(&client.event_queue.handle(), &registry, 1..=1, wayc::NoopIgnore)
+        .bind::<ClientSeat, _, _>(&client.event_queue.handle(), &registry, 1..=1, ())
         .unwrap();
     let ddmgr = client_ddata
         .globals
-        .bind::<ClientDDMgr, _, _>(&client.event_queue.handle(), &registry, 3..=3, wayc::NoopIgnore)
+        .bind::<ClientDDMgr, _, _>(&client.event_queue.handle(), &registry, 3..=3, ())
         .unwrap();
 
     // client creates two data devices
@@ -291,18 +288,17 @@ fn creation_destruction_queue_dispatch_race() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
     let seat = client_ddata
         .globals
-        .bind::<ClientSeat, _, _>(&client.event_queue.handle(), &registry, 1..=1, wayc::NoopIgnore)
+        .bind::<ClientSeat, _, _>(&client.event_queue.handle(), &registry, 1..=1, ())
         .unwrap();
     let ddmgr = client_ddata
         .globals
-        .bind::<ClientDDMgr, _, _>(&client.event_queue.handle(), &registry, 3..=3, wayc::NoopIgnore)
+        .bind::<ClientDDMgr, _, _>(&client.event_queue.handle(), &registry, 3..=3, ())
         .unwrap();
 
     let client_dd = ddmgr.get_data_device(&seat, &client.event_queue.handle(), ());
@@ -364,14 +360,22 @@ impl AsMut<globals::GlobalList> for ClientHandler {
     }
 }
 
-impl wayc::Dispatch<wayc::protocol::wl_data_device::WlDataDevice, ClientHandler> for () {
+wayc::delegate_dispatch!(ClientHandler:
+    [wayc::protocol::wl_registry::WlRegistry: ()] => globals::GlobalList
+);
+client_ignore_impl!(ClientHandler => [
+    ClientSeat,
+    ClientDDMgr
+]);
+
+impl wayc::Dispatch<wayc::protocol::wl_data_device::WlDataDevice, ()> for ClientHandler {
     fn event(
-        &self,
-        state: &mut ClientHandler,
+        state: &mut Self,
         data_device: &wayc::protocol::wl_data_device::WlDataDevice,
         event: wayc::protocol::wl_data_device::Event,
+        _: &(),
         conn: &wayc::Connection,
-        _: &wayc::QueueHandle<ClientHandler>,
+        _: &wayc::QueueHandle<Self>,
     ) {
         if conn.object_info(data_device.id()).is_err() {
             state.received_dead = true;
@@ -389,14 +393,14 @@ impl wayc::Dispatch<wayc::protocol::wl_data_device::WlDataDevice, ClientHandler>
     ]);
 }
 
-impl wayc::Dispatch<ClientDO, ClientHandler> for () {
+impl wayc::Dispatch<ClientDO, ()> for ClientHandler {
     fn event(
-        &self,
-        state: &mut ClientHandler,
+        state: &mut Self,
         _: &ClientDO,
         event: wayc::protocol::wl_data_offer::Event,
+        _: &(),
         _: &wayc::Connection,
-        _: &wayc::QueueHandle<ClientHandler>,
+        _: &wayc::QueueHandle<Self>,
     ) {
         match event {
             wayc::protocol::wl_data_offer::Event::Offer { mime_type } => {
@@ -422,15 +426,15 @@ server_ignore_global_impl!(ServerHandler => [
     ServerDDMgr
 ]);
 
-impl ways::Dispatch<ServerDDMgr, ServerHandler> for () {
+impl ways::Dispatch<ServerDDMgr, ()> for ServerHandler {
     fn request(
-        &self,
-        state: &mut ServerHandler,
+        state: &mut Self,
         _: &ways::Client,
         _: &ServerDDMgr,
         request: SDDMReq,
+        _: &(),
         _: &ways::DisplayHandle,
-        data_init: &mut ways::DataInit<'_, ServerHandler>,
+        data_init: &mut ways::DataInit<'_, Self>,
     ) {
         match request {
             SDDMReq::GetDataDevice { id, .. } => {

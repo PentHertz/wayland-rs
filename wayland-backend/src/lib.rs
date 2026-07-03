@@ -33,8 +33,12 @@
 //!
 //! ## raw-window-handle integration
 //!
-//! The `rwh_06` feature activates the [`HasDisplayHandle`][rwh_06::HasDisplayHandle] implementation
+//! The `rwh_06` feature activates the [`HasDisplayHandle`][raw_window_handle::HasDisplayHandle] implementation
 //! for the client module [`Backend`][client::Backend].
+//!
+//! ### Deprecated raw-window-handle versions
+//!
+//! While raw-window-handle 0.5 is supported via the `raw-window-handle` feature, it is deprecated and will be removed in the future.
 //!
 //! Note that the `client_system` feature must also be enabled for the implementation to be activated.
 
@@ -102,7 +106,7 @@ mod types;
  */
 
 #[cfg(feature = "log")]
-#[unsafe(no_mangle)]
+#[no_mangle]
 extern "C" fn wl_log_rust_logger_client(msg: *const std::os::raw::c_char) {
     let cstr = unsafe { std::ffi::CStr::from_ptr(msg) };
     let text = cstr.to_string_lossy();
@@ -110,7 +114,7 @@ extern "C" fn wl_log_rust_logger_client(msg: *const std::os::raw::c_char) {
 }
 
 #[cfg(feature = "log")]
-#[unsafe(no_mangle)]
+#[no_mangle]
 extern "C" fn wl_log_rust_logger_server(msg: *const std::os::raw::c_char) {
     let cstr = unsafe { std::ffi::CStr::from_ptr(msg) };
     let text = cstr.to_string_lossy();

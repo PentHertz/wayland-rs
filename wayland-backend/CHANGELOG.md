@@ -2,20 +2,6 @@
 
 ## Unreleased
 
-#### Breaking changes
-- Use `Message<_, BorrowedFd>` instead of `RawFd`
-- Wrap `wl_interface` so `wayland-sys` can be a private, optional dependency
-  * (This API is generally used internally by `wayland-scanner`)
-- Return `NonNull` from `as_ptr()`
-- Remove `WEnum`
-- Do not use `downcast_rs` traits in API
-- Remove depreacted raw-window-handle 0.5 support
-
-#### Bugfixes
-- client/sys: Fix deadlock if `Backend` is used in `ObjectData::destroyed`
-- client/sys: Fix some race conditions accessing udata in a thread while it is
-  being set, or the proxy is being destroyed.
-
 ## 0.3.15 -- 2026-03-30
 
 #### Bugfixes

@@ -1,7 +1,7 @@
-use wayland_tests::{
-    DumbClientData, TestClient, TestServer, globals, roundtrip, server_ignore_global_impl,
-    server_ignore_impl, ways,
-};
+#[macro_use]
+mod helpers;
+
+use helpers::{globals, roundtrip, wayc, ways, DumbClientData, TestClient, TestServer};
 
 use ways::protocol::wl_output::WlOutput as ServerOutput;
 
@@ -17,14 +17,13 @@ fn main() {
     let my_client = server.display.handle().insert_client(s1, Arc::new(DumbClientData)).unwrap();
 
     let fd2 = s2.into_raw_fd();
-    // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { ::std::env::set_var("WAYLAND_SOCKET", format!("{fd2}")) };
+    ::std::env::set_var("WAYLAND_SOCKET", format!("{fd2}"));
 
     let mut client = TestClient::new_from_env();
 
     let mut client_data = ClientHandler::new();
 
-    client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_data, &mut ServerData).unwrap();
     // check that we connected to the right compositor
@@ -67,3 +66,7 @@ impl AsMut<globals::GlobalList> for ClientHandler {
         &mut self.globals
     }
 }
+
+wayc::delegate_dispatch!(ClientHandler:
+    [wayc::protocol::wl_registry::WlRegistry: ()] => globals::GlobalList
+);

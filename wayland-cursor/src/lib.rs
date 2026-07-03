@@ -57,18 +57,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rustix::fs::Mode;
 #[cfg(any(target_os = "linux", target_os = "android"))]
-use rustix::fs::{MemfdFlags, memfd_create};
+use rustix::fs::{memfd_create, MemfdFlags};
 use rustix::io::Errno;
 use rustix::shm;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::ffi::CStr;
 
 use wayland_client::backend::{InvalidId, ObjectData, WeakBackend};
 use wayland_client::protocol::wl_buffer::WlBuffer;
 use wayland_client::protocol::wl_shm::{self, Format, WlShm};
 use wayland_client::protocol::wl_shm_pool::{self, WlShmPool};
-use wayland_client::{Connection, Proxy};
+use wayland_client::{Connection, Proxy, WEnum};
 
-use xcursor::CursorTheme as XCursorTheme;
 use xcursor::parser as xparser;
+use xcursor::CursorTheme as XCursorTheme;
 use xparser::Image as XCursorImage;
 
 /// Represents a cursor theme loaded from the system.
@@ -379,7 +381,7 @@ impl CursorImageBuffer {
                     width: image.width as i32,
                     height: image.height as i32,
                     stride: (image.width * 4) as i32,
-                    format: Format::Argb8888,
+                    format: WEnum::Value(Format::Argb8888),
                 },
                 Some(Arc::new(IgnoreObjectData)),
             )
@@ -437,7 +439,10 @@ fn create_shm_fd() -> IoResult<OwnedFd> {
     // Only try memfd on systems that provide it, (like Linux, Android)
     #[cfg(any(target_os = "linux", target_os = "android"))]
     loop {
-        match memfd_create(c"wayland-cursor-rs", MemfdFlags::CLOEXEC) {
+        match memfd_create(
+            CStr::from_bytes_with_nul(b"wayland-cursor-rs\0").unwrap(),
+            MemfdFlags::CLOEXEC,
+        ) {
             Ok(fd) => return Ok(fd),
             Err(Errno::INTR) => continue,
             Err(Errno::NOSYS) => break,

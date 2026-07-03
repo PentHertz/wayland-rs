@@ -1,9 +1,8 @@
 use std::{
-    any::Any,
     ffi::CString,
     fmt,
     os::unix::{
-        io::{BorrowedFd, OwnedFd},
+        io::{BorrowedFd, OwnedFd, RawFd},
         net::UnixStream,
     },
     sync::Arc,
@@ -21,7 +20,7 @@ use super::server_impl;
 ///
 /// The methods of this trait will be invoked internally every time a
 /// new object is created to initialize its data.
-pub trait ObjectData<D>: Any + Send + Sync {
+pub trait ObjectData<D>: downcast_rs::DowncastSync {
     /// Dispatch a request for the associated object
     ///
     /// If the request has a `NewId` argument, the callback must return the object data
@@ -50,6 +49,8 @@ pub trait ObjectData<D>: Any + Send + Sync {
     }
 }
 
+downcast_rs::impl_downcast!(sync ObjectData<D>);
+
 impl<D: 'static> std::fmt::Debug for dyn ObjectData<D> {
     #[cfg_attr(unstable_coverage, coverage(off))]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -58,7 +59,7 @@ impl<D: 'static> std::fmt::Debug for dyn ObjectData<D> {
 }
 
 /// A trait representing the handling of new bound globals
-pub trait GlobalHandler<D>: Any + Send + Sync {
+pub trait GlobalHandler<D>: downcast_rs::DowncastSync {
     /// Check if given client is allowed to interact with given global
     ///
     /// If this function returns false, the client will not be notified of the existence
@@ -103,8 +104,10 @@ impl<D: 'static> std::fmt::Debug for dyn GlobalHandler<D> {
     }
 }
 
+downcast_rs::impl_downcast!(sync GlobalHandler<D>);
+
 /// A trait representing your data associated to a client
-pub trait ClientData: Any + Send + Sync {
+pub trait ClientData: downcast_rs::DowncastSync {
     /// Notification that the client was initialized
     fn initialized(&self, _client_id: ClientId) {}
     /// Notification that the client is disconnected
@@ -126,6 +129,8 @@ impl std::fmt::Debug for dyn ClientData {
 }
 
 impl ClientData for () {}
+
+downcast_rs::impl_downcast!(sync ClientData);
 
 /// An ID representing a Wayland object
 ///
@@ -272,7 +277,7 @@ impl Handle {
     /// The `data` parameter contains data that will be associated with the client.
     #[inline]
     pub fn insert_client(
-        &self,
+        &mut self,
         stream: UnixStream,
         data: Arc<dyn ClientData>,
     ) -> std::io::Result<ClientId> {
@@ -381,7 +386,7 @@ impl Handle {
     /// - the message opcode must be valid for the sender interface
     /// - the argument list must match the prototype for the message associated with this opcode
     #[inline]
-    pub fn send_event(&self, msg: Message<ObjectId, BorrowedFd>) -> Result<(), InvalidId> {
+    pub fn send_event(&self, msg: Message<ObjectId, RawFd>) -> Result<(), InvalidId> {
         self.handle.send_event(msg)
     }
 
@@ -402,7 +407,7 @@ impl Handle {
     pub fn get_object_data_any(
         &self,
         id: ObjectId,
-    ) -> Result<Arc<dyn Any + Send + Sync>, InvalidId> {
+    ) -> Result<Arc<dyn std::any::Any + Send + Sync>, InvalidId> {
         self.handle.get_object_data_any(id.id)
     }
 
@@ -513,7 +518,7 @@ impl Handle {
     /// Flushes pending events destined for a client.
     ///
     /// If no client is specified, all pending events are flushed to all clients.
-    pub fn flush(&self, client: Option<ClientId>) -> std::io::Result<()> {
+    pub fn flush(&mut self, client: Option<ClientId>) -> std::io::Result<()> {
         self.handle.flush(client)
     }
 
@@ -552,7 +557,7 @@ impl<D> Backend<D> {
     ///
     /// If no client is specified, all pending events are flushed to all clients.
     #[inline]
-    pub fn flush(&self, client: Option<ClientId>) -> std::io::Result<()> {
+    pub fn flush(&mut self, client: Option<ClientId>) -> std::io::Result<()> {
         self.backend.flush(client)
     }
 
@@ -592,7 +597,7 @@ impl<D> Backend<D> {
     /// [`Backend::dispatch_all_clients()`].
     #[inline]
     pub fn dispatch_single_client(
-        &self,
+        &mut self,
         data: &mut D,
         client_id: ClientId,
     ) -> std::io::Result<usize> {
@@ -609,7 +614,7 @@ impl<D> Backend<D> {
     /// file descriptor retrieved by [`Backend::poll_fd`] and only calling this method when messages are
     /// available.
     #[inline]
-    pub fn dispatch_all_clients(&self, data: &mut D) -> std::io::Result<usize> {
+    pub fn dispatch_all_clients(&mut self, data: &mut D) -> std::io::Result<usize> {
         self.backend.dispatch_all_clients(data)
     }
 }

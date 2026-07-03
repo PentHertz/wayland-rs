@@ -3,7 +3,7 @@
 use std::os::unix::io::OwnedFd;
 use std::{fmt, sync::Arc};
 
-use crate::protocol::{Interface, Message, same_interface};
+use crate::protocol::{same_interface, Interface, Message};
 
 mod client;
 mod common_poll;

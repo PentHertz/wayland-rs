@@ -1,30 +1,29 @@
 //! Server-side implementation of a Wayland protocol backend using `libwayland`
 
 use std::{
-    any::Any,
     ffi::{CStr, CString},
     os::raw::{c_int, c_void},
     os::unix::{
-        io::{AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd},
+        io::{BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd},
         net::UnixStream,
     },
     ptr::NonNull,
     sync::{
-        Arc, Mutex, Weak,
         atomic::{AtomicBool, Ordering},
+        Arc, Mutex, Weak,
     },
 };
 
 use crate::protocol::{
-    ANONYMOUS_INTERFACE, AllowNull, Argument, ArgumentType, Interface, Message, ObjectInfo,
-    check_for_signature, same_interface,
+    check_for_signature, same_interface, AllowNull, Argument, ArgumentType, Interface, Message,
+    ObjectInfo, ANONYMOUS_INTERFACE,
 };
 use scoped_tls::scoped_thread_local;
 use smallvec::SmallVec;
 
 use wayland_sys::{common::*, ffi_dispatch, server::*};
 
-use super::{RUST_MANAGED, free_arrays, server::*};
+use super::{free_arrays, server::*, RUST_MANAGED};
 
 #[allow(unused_imports)]
 pub use crate::types::server::{Credentials, DisconnectReason, GlobalInfo, InitError, InvalidId};
@@ -156,10 +155,8 @@ impl InnerObjectId {
             }
             Ok(InnerObjectId { id, ptr, alive, interface: udata_iface })
         } else if let Some(interface) = interface {
-            let iface_c_ptr = &interface
-                .c_interface
-                .expect("[wayland-backend-sys] Cannot use Interface without c_interface!")
-                .0;
+            let iface_c_ptr =
+                interface.c_ptr.expect("[wayland-backend-sys] Cannot use Interface without c_ptr!");
             // Safety: the provided pointer must be a valid wayland object
             let ptr_iface_name = unsafe {
                 CStr::from_ptr(ffi_dispatch!(wayland_server_handle(), wl_resource_get_class, ptr))
@@ -377,7 +374,7 @@ impl<D> InnerBackend<D> {
         })
     }
 
-    pub fn flush(&self, client: Option<ClientId>) -> std::io::Result<()> {
+    pub fn flush(&mut self, client: Option<ClientId>) -> std::io::Result<()> {
         self.state.lock().unwrap().flush(client)
     }
 
@@ -398,14 +395,14 @@ impl<D> InnerBackend<D> {
     }
 
     pub fn dispatch_client(
-        &self,
+        &mut self,
         data: &mut D,
         _client_id: InnerClientId,
     ) -> std::io::Result<usize> {
         self.dispatch_all_clients(data)
     }
 
-    pub fn dispatch_all_clients(&self, data: &mut D) -> std::io::Result<usize> {
+    pub fn dispatch_all_clients(&mut self, data: &mut D) -> std::io::Result<usize> {
         let state = self.state.clone() as Arc<Mutex<dyn ErasedState + Send>>;
         let display = self.display_ptr;
         let ret = HANDLE.set(&(state, data as *mut _ as *mut c_void), || unsafe {
@@ -421,7 +418,11 @@ impl<D> InnerBackend<D> {
             object.clone().destroyed(&handle, data, client_id, object_id);
         }
 
-        if ret < 0 { Err(std::io::Error::last_os_error()) } else { Ok(ret as usize) }
+        if ret < 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(ret as usize)
+        }
     }
 }
 
@@ -539,7 +540,7 @@ impl InnerHandle {
     ) -> Result<ObjectId, InvalidId> {
         let mut state = self.state.lock().unwrap();
         // Keep this guard alive while the code is run to protect the C state
-        let _state = (&mut *state as &mut dyn Any)
+        let _state = (&mut *state as &mut dyn ErasedState)
             .downcast_mut::<State<D>>()
             .expect("Wrong type parameter passed to Handle::create_object().");
 
@@ -547,10 +548,8 @@ impl InnerHandle {
             return Err(InvalidId);
         }
 
-        let interface_ptr = &interface
-            .c_interface
-            .expect("Interface without c_interface are unsupported by the sys backend.")
-            .0;
+        let interface_ptr =
+            interface.c_ptr.expect("Interface without c_ptr are unsupported by the sys backend.");
 
         let resource = unsafe {
             ffi_dispatch!(
@@ -569,7 +568,7 @@ impl InnerHandle {
     pub fn destroy_object<D: 'static>(&self, id: &ObjectId) -> Result<(), InvalidId> {
         let mut state = self.state.lock().unwrap();
         // Keep this guard alive while the code is run to protect the C state
-        let state = (&mut *state as &mut dyn Any)
+        let state = (&mut *state as &mut dyn ErasedState)
             .downcast_mut::<State<D>>()
             .expect("Wrong type parameter passed to Handle::destroy_object().");
 
@@ -595,7 +594,7 @@ impl InnerHandle {
         }
     }
 
-    pub fn send_event(&self, msg: Message<ObjectId, BorrowedFd>) -> Result<(), InvalidId> {
+    pub fn send_event(&self, msg: Message<ObjectId, RawFd>) -> Result<(), InvalidId> {
         self.state.lock().unwrap().send_event(msg)
     }
 
@@ -605,7 +604,7 @@ impl InnerHandle {
     ) -> Result<Arc<dyn ObjectData<D>>, InvalidId> {
         let mut state = self.state.lock().unwrap();
         // Keep this guard alive while the code is run to protect the C state
-        let _state = (&mut *state as &mut dyn Any)
+        let _state = (&mut *state as &mut dyn ErasedState)
             .downcast_mut::<State<D>>()
             .expect("Wrong type parameter passed to Handle::get_object_data().");
 
@@ -613,11 +612,8 @@ impl InnerHandle {
             return Err(InvalidId);
         }
 
-        let iface_c_ptr = &id
-            .interface
-            .c_interface
-            .expect("[wayland-backend-sys] Cannot use Interface without c_interface!")
-            .0;
+        let iface_c_ptr =
+            id.interface.c_ptr.expect("[wayland-backend-sys] Cannot use Interface without c_ptr!");
         let is_managed = unsafe {
             ffi_dispatch!(
                 wayland_server_handle(),
@@ -653,7 +649,7 @@ impl InnerHandle {
     ) -> Result<(), InvalidId> {
         let mut state = self.state.lock().unwrap();
         // Keep this guard alive while the code is run to protect the C state
-        let _state = (&mut *state as &mut dyn Any)
+        let _state = (&mut *state as &mut dyn ErasedState)
             .downcast_mut::<State<D>>()
             .expect("Wrong type parameter passed to Handle::set_object_data().");
 
@@ -661,11 +657,8 @@ impl InnerHandle {
             return Err(InvalidId);
         }
 
-        let iface_c_ptr = &id
-            .interface
-            .c_interface
-            .expect("[wayland-backend-sys] Cannot use Interface without c_interface!")
-            .0;
+        let iface_c_ptr =
+            id.interface.c_ptr.expect("[wayland-backend-sys] Cannot use Interface without c_ptr!");
         let is_managed = unsafe {
             ffi_dispatch!(
                 wayland_server_handle(),
@@ -705,7 +698,7 @@ impl InnerHandle {
     ) -> InnerGlobalId {
         let display = {
             let mut state = self.state.lock().unwrap();
-            let state = (&mut *state as &mut dyn Any)
+            let state = (&mut *state as &mut dyn ErasedState)
                 .downcast_mut::<State<D>>()
                 .expect("Wrong type parameter passed to Handle::create_global().");
             state.display
@@ -713,10 +706,8 @@ impl InnerHandle {
 
         let alive = Arc::new(AtomicBool::new(true));
 
-        let interface_ptr = &interface
-            .c_interface
-            .expect("Interface without c_interface are unsupported by the sys backend.")
-            .0;
+        let interface_ptr =
+            interface.c_ptr.expect("Interface without c_ptr are unsupported by the sys backend.");
 
         let udata = Box::into_raw(Box::new(GlobalUserData {
             handler,
@@ -752,7 +743,7 @@ impl InnerHandle {
         }
 
         let mut state = self.state.lock().unwrap();
-        let state = (&mut *state as &mut dyn Any)
+        let state = (&mut *state as &mut dyn ErasedState)
             .downcast_mut::<State<D>>()
             .expect("Wrong type parameter passed to Handle::create_global().");
 
@@ -765,7 +756,7 @@ impl InnerHandle {
         // check that `D` is correct
         {
             let mut state = self.state.lock().unwrap();
-            let _state = (&mut *state as &mut dyn Any)
+            let _state = (&mut *state as &mut dyn ErasedState)
                 .downcast_mut::<State<D>>()
                 .expect("Wrong type parameter passed to Handle::disable_global().");
         }
@@ -794,7 +785,7 @@ impl InnerHandle {
     pub fn remove_global<D: 'static>(&self, id: InnerGlobalId) {
         {
             let mut state = self.state.lock().unwrap();
-            let state = (&mut *state as &mut dyn Any)
+            let state = (&mut *state as &mut dyn ErasedState)
                 .downcast_mut::<State<D>>()
                 .expect("Wrong type parameter passed to Handle::remove_global().");
             state.known_globals.retain(|g| g != &id);
@@ -831,7 +822,7 @@ impl InnerHandle {
     ) -> Result<Arc<dyn GlobalHandler<D>>, InvalidId> {
         let mut state = self.state.lock().unwrap();
         // Keep this guard alive while the code is run to protect the C state
-        let _state = (&mut *state as &mut dyn Any)
+        let _state = (&mut *state as &mut dyn ErasedState)
             .downcast_mut::<State<D>>()
             .expect("Wrong type parameter passed to Handle::set_object_data().");
 
@@ -846,7 +837,7 @@ impl InnerHandle {
         Ok(udata.handler.clone())
     }
 
-    pub fn flush(&self, client: Option<ClientId>) -> std::io::Result<()> {
+    pub fn flush(&mut self, client: Option<ClientId>) -> std::io::Result<()> {
         self.state.lock().unwrap().flush(client)
     }
 
@@ -872,7 +863,7 @@ impl InnerHandle {
     }
 }
 
-pub(crate) trait ErasedState: Any {
+pub(crate) trait ErasedState: downcast_rs::Downcast {
     fn object_info(&self, id: InnerObjectId) -> Result<ObjectInfo, InvalidId>;
     fn insert_client(
         &self,
@@ -898,7 +889,7 @@ pub(crate) trait ErasedState: Any {
         &self,
         id: InnerObjectId,
     ) -> Result<Arc<dyn std::any::Any + Send + Sync>, InvalidId>;
-    fn send_event(&mut self, msg: Message<ObjectId, BorrowedFd>) -> Result<(), InvalidId>;
+    fn send_event(&mut self, msg: Message<ObjectId, RawFd>) -> Result<(), InvalidId>;
     fn post_error(&mut self, object_id: InnerObjectId, error_code: u32, message: CString);
     fn kill_client(&mut self, client_id: InnerClientId, reason: DisconnectReason);
     fn global_info(&self, id: InnerGlobalId) -> Result<GlobalInfo, InvalidId>;
@@ -910,6 +901,8 @@ pub(crate) trait ErasedState: Any {
     fn set_client_max_buffer_size(&mut self, client: InnerClientId, max_buffer_size: usize);
     fn display_ptr(&self) -> *mut wl_display;
 }
+
+downcast_rs::impl_downcast!(ErasedState);
 
 impl<D: 'static> ErasedState for State<D> {
     fn object_info(&self, id: InnerObjectId) -> Result<ObjectInfo, InvalidId> {
@@ -1075,11 +1068,8 @@ impl<D: 'static> ErasedState for State<D> {
             return Err(InvalidId);
         }
 
-        let iface_c_ptr = &id
-            .interface
-            .c_interface
-            .expect("[wayland-backend-sys] Cannot use Interface without c_interface!")
-            .0;
+        let iface_c_ptr =
+            id.interface.c_ptr.expect("[wayland-backend-sys] Cannot use Interface without c_ptr!");
         let is_managed = unsafe {
             ffi_dispatch!(
                 wayland_server_handle(),
@@ -1098,12 +1088,12 @@ impl<D: 'static> ErasedState for State<D> {
                 as *mut ResourceUserData<D>)
         };
 
-        Ok(udata.data.clone())
+        Ok(udata.data.clone().into_any_arc())
     }
 
     fn send_event(
         &mut self,
-        Message { sender_id: ObjectId { id }, opcode, args }: Message<ObjectId, BorrowedFd>,
+        Message { sender_id: ObjectId { id }, opcode, args }: Message<ObjectId, RawFd>,
     ) -> Result<(), InvalidId> {
         if !id.alive.load(Ordering::Acquire) || id.ptr.is_null() {
             return Err(InvalidId);
@@ -1130,7 +1120,7 @@ impl<D: 'static> ErasedState for State<D> {
                 Argument::Uint(u) => argument_list.push(wl_argument { u }),
                 Argument::Int(i) => argument_list.push(wl_argument { i }),
                 Argument::Fixed(f) => argument_list.push(wl_argument { f }),
-                Argument::Fd(h) => argument_list.push(wl_argument { h: h.as_raw_fd() }),
+                Argument::Fd(h) => argument_list.push(wl_argument { h }),
                 Argument::Array(ref a) => {
                     let a = Box::new(wl_array {
                         size: a.len(),
@@ -1155,14 +1145,7 @@ impl<D: 'static> ErasedState for State<D> {
                             panic!("Attempting to send an event with objects from wrong client.");
                         }
                         if !same_interface(next_interface, o.id.interface) {
-                            panic!(
-                                "Event {}@{}.{} expects an argument of interface {} but {} was provided instead.",
-                                id.interface.name,
-                                id.id,
-                                message_desc.name,
-                                next_interface.name,
-                                o.id.interface.name
-                            );
+                            panic!("Event {}@{}.{} expects an argument of interface {} but {} was provided instead.", id.interface.name, id.id, message_desc.name, next_interface.name, o.id.interface.name);
                         }
                     } else if !matches!(
                         message_desc.signature[i],
@@ -1189,20 +1172,10 @@ impl<D: 'static> ErasedState for State<D> {
                         }
                         let child_interface = match message_desc.child_interface {
                             Some(iface) => iface,
-                            None => panic!(
-                                "Trying to send event {}@{}.{} which creates an object without specifying its interface, this is unsupported.",
-                                id.interface.name, id.id, message_desc.name
-                            ),
+                            None => panic!("Trying to send event {}@{}.{} which creates an object without specifying its interface, this is unsupported.", id.interface.name, id.id, message_desc.name),
                         };
                         if !same_interface(child_interface, o.id.interface) {
-                            panic!(
-                                "Event {}@{}.{} expects an argument of interface {} but {} was provided instead.",
-                                id.interface.name,
-                                id.id,
-                                message_desc.name,
-                                child_interface.name,
-                                o.id.interface.name
-                            );
+                            panic!("Event {}@{}.{} expects an argument of interface {} but {} was provided instead.", id.interface.name, id.id, message_desc.name, child_interface.name, o.id.interface.name);
                         }
                     } else if !matches!(message_desc.signature[i], ArgumentType::NewId) {
                         panic!(
@@ -1311,7 +1284,11 @@ impl<D: 'static> ErasedState for State<D> {
             ffi_dispatch!(wayland_server_handle(), wl_global_get_name, global.ptr, client.ptr)
         };
 
-        if name == 0 { None } else { Some(name) }
+        if name == 0 {
+            None
+        } else {
+            Some(name)
+        }
     }
 
     fn is_known_global(&self, global_ptr: *const wl_global) -> bool {
@@ -1445,7 +1422,7 @@ unsafe extern "C" fn global_bind<D: 'static>(
     };
 
     // this must be Some(), checked at creation of the global
-    let interface_ptr = &global_udata.interface.c_interface.unwrap().0;
+    let interface_ptr = global_udata.interface.c_ptr.unwrap();
 
     HANDLE.with(|&(ref state_arc, data_ptr)| {
         // Safety: the data_ptr is a valid pointer that live outside code put there
@@ -1619,17 +1596,14 @@ unsafe extern "C" fn resource_dispatcher<D: 'static>(
                 if new_id != 0 {
                     let child_interface = match message_desc.child_interface {
                         Some(iface) => iface,
-                        None => panic!(
-                            "Received request {}@{}.{} which creates an object without specifying its interface, this is unsupported.",
-                            udata.interface.name, resource_id, message_desc.name
-                        ),
+                        None => panic!("Received request {}@{}.{} which creates an object without specifying its interface, this is unsupported.", udata.interface.name, resource_id, message_desc.name),
                     };
                     // create the object
                     let resource = ffi_dispatch!(
                         wayland_server_handle(),
                         wl_resource_create,
                         client,
-                        &child_interface.c_interface.unwrap().0,
+                        child_interface.c_ptr.unwrap(),
                         version,
                         new_id
                     );
@@ -1734,7 +1708,7 @@ unsafe extern "C" fn resource_destructor<D: 'static>(resource: *mut wl_resource)
 }
 
 #[cfg(feature = "log")]
-unsafe extern "C" {
+extern "C" {
     fn wl_log_trampoline_to_rust_server(fmt: *const std::os::raw::c_char, list: *const c_void);
 }
 

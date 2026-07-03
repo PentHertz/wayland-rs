@@ -1,13 +1,16 @@
+extern crate tempfile;
+
 use std::io::ErrorKind;
 use std::os::unix::io::{AsFd, OwnedFd};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use wayland_client::backend::ObjectData;
 
-use wayland_tests::{
-    TestClient, TestServer, globals, server_ignore_global_impl, server_ignore_impl, wayc, ways,
-};
+#[macro_use]
+mod helpers;
+
+use helpers::{globals, wayc, ways, TestClient, TestServer};
 
 // This test checks the behavior for
 //  - sending many wl_shm.create_pool requests between connection flushes
@@ -43,8 +46,7 @@ fn backend_socket_out_limits() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler { globals: globals::GlobalList::new(), syncs_done: 0 };
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     // Initial sync
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
@@ -55,7 +57,7 @@ fn backend_socket_out_limits() {
             &client.event_queue.handle(),
             &registry,
             1..=1,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
 
@@ -64,7 +66,7 @@ fn backend_socket_out_limits() {
     let mut pools = Vec::new();
     for _ in 0..TEST_FD_COUNT {
         let file = tempfile::tempfile().unwrap();
-        let pool = shm.create_pool(file.as_fd(), 8, &client.event_queue.handle(), wayc::NoopIgnore);
+        let pool = shm.create_pool(file.as_fd(), 8, &client.event_queue.handle(), ());
         files.push(file);
         pools.push(pool);
     }
@@ -83,15 +85,15 @@ struct ServerHandler {
     received_fds: Vec<OwnedFd>,
 }
 
-impl ways::Dispatch<ways::protocol::wl_shm::WlShm, ServerHandler> for () {
+impl ways::Dispatch<ways::protocol::wl_shm::WlShm, ()> for ServerHandler {
     fn request(
-        &self,
-        state: &mut ServerHandler,
+        state: &mut Self,
         _: &ways::Client,
         _: &ways::protocol::wl_shm::WlShm,
         request: ways::protocol::wl_shm::Request,
+        _: &(),
         _: &ways::DisplayHandle,
-        init: &mut ways::DataInit<'_, ServerHandler>,
+        init: &mut ways::DataInit<'_, Self>,
     ) {
         if let ways::protocol::wl_shm::Request::CreatePool { fd, id, .. } = request {
             state.received_fds.push(fd);
@@ -123,18 +125,28 @@ impl AsMut<globals::GlobalList> for ClientHandler {
     }
 }
 
-impl wayc::Dispatch<wayc::protocol::wl_callback::WlCallback, ClientHandler> for () {
+impl wayc::Dispatch<wayc::protocol::wl_callback::WlCallback, ()> for ClientHandler {
     fn event(
-        &self,
-        state: &mut ClientHandler,
+        state: &mut Self,
         _: &wayc::protocol::wl_callback::WlCallback,
         _: <wayc::protocol::wl_callback::WlCallback as wayland_client::Proxy>::Event,
+        _: &(),
         _: &wayland_client::Connection,
-        _: &wayland_client::QueueHandle<ClientHandler>,
+        _: &wayland_client::QueueHandle<Self>,
     ) {
         state.syncs_done += 1;
     }
 }
+
+wayc::delegate_dispatch!(ClientHandler:
+    [wayc::protocol::wl_registry::WlRegistry: ()] => globals::GlobalList
+);
+
+client_ignore_impl!(ClientHandler => [
+    wayc::protocol::wl_compositor::WlCompositor,
+    wayc::protocol::wl_shm::WlShm,
+    wayc::protocol::wl_shm_pool::WlShmPool
+]);
 
 // Use a modified version of helpers::roundtrip here
 // which gracefully handles ErrorKind::WouldBlock from socket reads and flushes

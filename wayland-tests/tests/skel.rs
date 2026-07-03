@@ -1,6 +1,7 @@
-use wayland_tests::*;
+mod helpers;
 
-#[allow(clippy::assertions_on_constants)]
+use helpers::*;
+
 #[test]
 fn skel() {
     // Server setup

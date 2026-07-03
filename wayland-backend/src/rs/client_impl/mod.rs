@@ -3,7 +3,7 @@
 use std::{
     fmt,
     os::unix::{
-        io::{AsRawFd, BorrowedFd, OwnedFd},
+        io::{AsRawFd, BorrowedFd, OwnedFd, RawFd},
         net::UnixStream,
     },
     sync::{Arc, Condvar, Mutex, MutexGuard, Weak},
@@ -13,9 +13,9 @@ use crate::{
     core_interfaces::WL_DISPLAY_INTERFACE,
     debug,
     protocol::{
-        ANONYMOUS_INTERFACE, AllowNull, Argument, ArgumentType, INLINE_ARGS, Interface, Message,
-        ObjectInfo, ProtocolError, check_for_signature, same_interface,
-        same_interface_or_anonymous,
+        check_for_signature, same_interface, same_interface_or_anonymous, AllowNull, Argument,
+        ArgumentType, Interface, Message, ObjectInfo, ProtocolError, ANONYMOUS_INTERFACE,
+        INLINE_ARGS,
     },
 };
 use smallvec::SmallVec;
@@ -301,14 +301,6 @@ impl InnerBackend {
     pub fn destroy_object(&self, id: &ObjectId) -> Result<(), InvalidId> {
         let mut guard = self.state.lock_protocol();
         let object = guard.get_object(id.id.clone())?;
-
-        // Do not allow destroying the display object; it uses DumbObjectData whose
-        // destroyed() panics, and the display lifecycle is managed by the connection
-        // itself. Attempting to destroy the display will return Err(InvalidId).
-        if same_interface(id.id.interface, &WL_DISPLAY_INTERFACE) {
-            return Err(InvalidId);
-        }
-
         guard
             .map
             .with(id.id.id, |obj| {
@@ -325,7 +317,7 @@ impl InnerBackend {
 
     pub fn send_request(
         &self,
-        Message { sender_id: ObjectId { id }, opcode, args }: Message<ObjectId, BorrowedFd>,
+        Message { sender_id: ObjectId { id }, opcode, args }: Message<ObjectId, RawFd>,
         data: Option<Arc<dyn ObjectData>>,
         child_spec: Option<(&'static Interface, u32)>,
     ) -> Result<ObjectId, InvalidId> {
@@ -388,7 +380,9 @@ impl InnerBackend {
             } else {
                 panic!(
                     "Error when sending request {}@{}.{}: target interface must be specified for a generic constructor.",
-                    object.interface.name, id.id, message_desc.name
+                    object.interface.name,
+                    id.id,
+                    message_desc.name
                 );
             }
         } else {
@@ -552,7 +546,11 @@ impl ProtocolState {
 
     #[inline]
     fn no_last_error(&self) -> Result<(), WaylandError> {
-        if let Some(ref err) = self.last_error { Err(err.clone()) } else { Ok(()) }
+        if let Some(ref err) = self.last_error {
+            Err(err.clone())
+        } else {
+            Ok(())
+        }
     }
 
     #[inline]
@@ -592,11 +590,8 @@ impl ProtocolState {
         match message.opcode {
             0 => {
                 // wl_display.error
-                if let [
-                    Argument::Object(obj),
-                    Argument::Uint(code),
-                    Argument::Str(Some(ref message)),
-                ] = message.args[..]
+                if let [Argument::Object(obj), Argument::Uint(code), Argument::Str(Some(ref message))] =
+                    message.args[..]
                 {
                     let object = self.map.find(obj);
                     let err = WaylandError::Protocol(ProtocolError {

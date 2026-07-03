@@ -1,5 +1,8 @@
+#[macro_use]
+mod helpers;
+
+use helpers::*;
 use wayc::Proxy;
-use wayland_tests::*;
 
 #[test]
 fn constructor_dead() {
@@ -12,8 +15,7 @@ fn constructor_dead() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler { globals: globals::GlobalList::new() };
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut ServerHandler).unwrap();
 
@@ -23,13 +25,13 @@ fn constructor_dead() {
             &client.event_queue.handle(),
             &registry,
             1..=1,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
 
     seat.release();
 
-    assert!(seat.get_pointer(&client.event_queue.handle(), wayc::NoopIgnore).id().is_null());
+    assert!(seat.get_pointer(&client.event_queue.handle(), ()).id().is_null());
 }
 
 #[test]
@@ -43,8 +45,7 @@ fn send_constructor_wrong_type() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler { globals: globals::GlobalList::new() };
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut ServerHandler).unwrap();
 
@@ -54,7 +55,7 @@ fn send_constructor_wrong_type() {
             &client.event_queue.handle(),
             &registry,
             1..=1,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
 
@@ -67,7 +68,7 @@ fn send_constructor_wrong_type() {
                 client
                     .event_queue
                     .handle()
-                    .make_data::<wayc::protocol::wl_keyboard::WlKeyboard, _>(wayc::NoopIgnore),
+                    .make_data::<wayc::protocol::wl_keyboard::WlKeyboard, _>(()),
             ),
         )
         .unwrap();
@@ -89,6 +90,16 @@ impl AsMut<globals::GlobalList> for ClientHandler {
         &mut self.globals
     }
 }
+
+wayc::delegate_dispatch!(ClientHandler:
+    [wayc::protocol::wl_registry::WlRegistry: ()] => globals::GlobalList
+);
+
+client_ignore_impl!(ClientHandler => [
+    wayc::protocol::wl_seat::WlSeat,
+    wayc::protocol::wl_pointer::WlPointer,
+    wayc::protocol::wl_keyboard::WlKeyboard
+]);
 
 /*
  * Server handler

@@ -1,14 +1,7 @@
-use std::{
-    os::fd::OwnedFd,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
-use wayland_client::Proxy;
-use wayland_tests::{
-    TestServer, globals, roundtrip, server_ignore_global_impl, server_ignore_impl, wayc, ways,
-};
+#[macro_use]
+mod helpers;
+
+use helpers::{globals, roundtrip, wayc, ways, TestServer};
 
 #[test]
 fn destroyed_object_in_arg() {
@@ -20,98 +13,34 @@ fn destroyed_object_in_arg() {
 
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::default();
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
     let qh = client.event_queue.handle();
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut ServerHandler).unwrap();
 
     let compositor = client_ddata
         .globals
-        .bind::<wayc::protocol::wl_compositor::WlCompositor, _, _>(
-            &qh,
-            &registry,
-            1..=1,
-            wayc::Noop,
-        )
+        .bind::<wayc::protocol::wl_compositor::WlCompositor, _, _>(&qh, &registry, 1..=1, ())
         .unwrap();
-    let surface = compositor.create_surface(&qh, wayc::NoopIgnore);
-    let region = compositor.create_region(&qh, wayc::NoopIgnore);
+    let surface = compositor.create_surface(&qh, ());
+    let region = compositor.create_region(&qh, ());
     region.destroy();
     surface.set_input_region(Some(&region));
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut ServerHandler).unwrap();
 }
 
-#[test]
-fn destroy_object_objectdata() {
-    let mut server = TestServer::new();
-    let (_, mut client) = server.add_client();
-
-    let backend = client.conn.backend();
-    let callback_data =
-        Arc::new(DestroyTestUdata { backend: backend.clone(), destroyed: AtomicBool::new(false) });
-    let _callback = client
-        .display
-        .send_constructor::<wayc::protocol::wl_callback::WlCallback>(
-            wayc::protocol::wl_display::Request::Sync {},
-            callback_data.clone(),
-        )
-        .unwrap();
-    let registry_data =
-        Arc::new(DestroyTestUdata { backend: backend.clone(), destroyed: AtomicBool::new(false) });
-    let registry = client
-        .display
-        .send_constructor::<wayc::protocol::wl_registry::WlRegistry>(
-            wayc::protocol::wl_display::Request::GetRegistry {},
-            registry_data.clone(),
-        )
-        .unwrap();
-
-    roundtrip(&mut client, &mut server, &mut (), &mut ()).unwrap();
-    assert!(callback_data.destroyed.load(Ordering::Relaxed));
-    assert!(!registry_data.destroyed.load(Ordering::Relaxed));
-    backend.destroy_object(&registry.id()).unwrap();
-}
-
-struct DestroyTestUdata {
-    backend: wayc::backend::Backend,
-    destroyed: AtomicBool,
-}
-
-impl wayc::backend::ObjectData for DestroyTestUdata {
-    fn event(
-        self: Arc<Self>,
-        _: &wayc::backend::Backend,
-        _: wayc::backend::protocol::Message<wayc::backend::ObjectId, OwnedFd>,
-    ) -> Option<Arc<dyn wayc::backend::ObjectData + 'static>> {
-        None
-    }
-
-    fn destroyed(&self, id: wayc::backend::ObjectId) {
-        assert!(!self.destroyed.load(Ordering::Relaxed));
-        assert!(!id.is_null());
-        // `destroyed()` is called with object already marked as not alive, or it
-        // could be invoked twice.
-        #[cfg(feature = "client_system")]
-        assert_eq!(id.as_ptr(), Err(wayc::backend::InvalidId));
-        // Function locks `connection_state`; test for deadlock
-        self.backend.display_id();
-        self.destroyed.store(true, Ordering::Relaxed);
-    }
-}
-
 struct ServerHandler;
 
-impl ways::Dispatch<ways::protocol::wl_compositor::WlCompositor, ServerHandler> for () {
+impl ways::Dispatch<ways::protocol::wl_compositor::WlCompositor, ()> for ServerHandler {
     fn request(
-        &self,
-        _state: &mut ServerHandler,
+        _state: &mut Self,
         _: &ways::Client,
         _: &ways::protocol::wl_compositor::WlCompositor,
         request: ways::protocol::wl_compositor::Request,
+        _: &(),
         _: &ways::DisplayHandle,
-        data_init: &mut ways::DataInit<'_, ServerHandler>,
+        data_init: &mut ways::DataInit<'_, Self>,
     ) {
         match request {
             ways::protocol::wl_compositor::Request::CreateSurface { id } => {
@@ -146,3 +75,10 @@ impl AsMut<globals::GlobalList> for ClientHandler {
         &mut self.globals
     }
 }
+
+wayc::delegate_dispatch!(ClientHandler:
+    [wayc::protocol::wl_registry::WlRegistry: ()] => globals::GlobalList
+);
+wayc::delegate_noop!(ClientHandler: wayc::protocol::wl_compositor::WlCompositor);
+wayc::delegate_noop!(ClientHandler: ignore wayc::protocol::wl_surface::WlSurface);
+wayc::delegate_noop!(ClientHandler: wayc::protocol::wl_region::WlRegion);

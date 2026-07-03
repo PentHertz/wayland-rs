@@ -1,9 +1,14 @@
-use wayland_tests::{TestServer, globals, roundtrip, wayc, ways};
+#[macro_use]
+mod helpers;
+
+use helpers::{globals, roundtrip, wayc, ways, TestServer};
 
 use ways::{
-    Resource,
     protocol::{wl_compositor, wl_output},
+    Resource,
 };
+
+use wayc::protocol::wl_output::WlOutput as ClientOutput;
 
 #[test]
 fn resource_equals() {
@@ -17,8 +22,7 @@ fn resource_equals() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
@@ -29,7 +33,7 @@ fn resource_equals() {
             &client.event_queue.handle(),
             &registry,
             3..=3,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
     client_ddata
@@ -38,7 +42,7 @@ fn resource_equals() {
             &client.event_queue.handle(),
             &registry,
             3..=3,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
 
@@ -65,8 +69,7 @@ fn resource_user_data() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
@@ -77,7 +80,7 @@ fn resource_user_data() {
             &client.event_queue.handle(),
             &registry,
             3..=3,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
     client_ddata
@@ -86,7 +89,7 @@ fn resource_user_data() {
             &client.event_queue.handle(),
             &registry,
             3..=3,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
 
@@ -110,8 +113,7 @@ fn dead_resources() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
@@ -122,7 +124,7 @@ fn dead_resources() {
             &client.event_queue.handle(),
             &registry,
             3..=3,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
     client_ddata
@@ -131,7 +133,7 @@ fn dead_resources() {
             &client.event_queue.handle(),
             &registry,
             3..=3,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
 
@@ -163,8 +165,7 @@ fn get_resource() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
@@ -175,7 +176,7 @@ fn get_resource() {
             &client.event_queue.handle(),
             &registry,
             3..=3,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
 
@@ -185,19 +186,17 @@ fn get_resource() {
     // its id should be 3 (1 is wl_display and 2 is wl_registry)
     let client = server.display.handle().get_client(server_ddata.outputs[0].id()).unwrap();
     // wrong interface fails
-    assert!(
-        client
-            .object_from_protocol_id::<wl_compositor::WlCompositor>(&server.display.handle(), 3)
-            .is_err()
-    );
+    assert!(client
+        .object_from_protocol_id::<wl_compositor::WlCompositor>(&server.display.handle(), 3)
+        .is_err());
     // wrong id fails
-    assert!(
-        client.object_from_protocol_id::<wl_output::WlOutput>(&server.display.handle(), 4).is_err()
-    );
+    assert!(client
+        .object_from_protocol_id::<wl_output::WlOutput>(&server.display.handle(), 4)
+        .is_err());
     // but this suceeds
-    assert!(
-        client.object_from_protocol_id::<wl_output::WlOutput>(&server.display.handle(), 3).is_ok()
-    );
+    assert!(client
+        .object_from_protocol_id::<wl_output::WlOutput>(&server.display.handle(), 3)
+        .is_ok());
 }
 
 struct ClientHandler {
@@ -216,18 +215,24 @@ impl AsMut<globals::GlobalList> for ClientHandler {
     }
 }
 
+wayc::delegate_dispatch!(ClientHandler:
+    [wayc::protocol::wl_registry::WlRegistry: ()] => globals::GlobalList
+);
+
+client_ignore_impl!(ClientHandler => [ClientOutput]);
+
 struct ServerHandler {
     outputs: Vec<wl_output::WlOutput>,
 }
 
-impl ways::GlobalDispatch<wl_output::WlOutput, ServerHandler> for () {
+impl ways::GlobalDispatch<wl_output::WlOutput, ()> for ServerHandler {
     fn bind(
-        &self,
-        state: &mut ServerHandler,
+        state: &mut Self,
         _: &ways::DisplayHandle,
         _: &ways::Client,
         output: ways::New<ways::protocol::wl_output::WlOutput>,
-        data_init: &mut ways::DataInit<'_, ServerHandler>,
+        _: &(),
+        data_init: &mut ways::DataInit<'_, Self>,
     ) {
         let output = data_init.init(output, UData(1000 + state.outputs.len()));
         state.outputs.push(output);
@@ -236,15 +241,15 @@ impl ways::GlobalDispatch<wl_output::WlOutput, ServerHandler> for () {
 
 struct UData(usize);
 
-impl ways::Dispatch<wl_output::WlOutput, ServerHandler> for UData {
+impl ways::Dispatch<wl_output::WlOutput, UData> for ServerHandler {
     fn request(
-        &self,
-        _: &mut ServerHandler,
+        _: &mut Self,
         _: &ways::Client,
         _: &wl_output::WlOutput,
         _: wl_output::Request,
+        _: &UData,
         _: &ways::DisplayHandle,
-        _: &mut ways::DataInit<'_, ServerHandler>,
+        _: &mut ways::DataInit<'_, Self>,
     ) {
     }
 }

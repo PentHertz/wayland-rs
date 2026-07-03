@@ -105,32 +105,27 @@ macro_rules! assert_impl {
 }
 
 mod server {
-    use std::{
-        any::Any,
-        fmt::{Debug, Display},
-    };
-
     #[test]
     fn test_impls() {
         // ObjectData
         assert_impl!(
-            dyn server::ObjectData<()>: Debug, Any, Send, Sync
+            dyn server::ObjectData<()>: std::fmt::Debug, downcast_rs::DowncastSync
         );
 
         // GlobalHandler
         assert_impl!(
-            dyn server::GlobalHandler<()>: Debug, Any, Send, Sync
+            dyn server::GlobalHandler<()>: std::fmt::Debug, downcast_rs::DowncastSync
         );
 
         // ClientData
         assert_impl!(
-            dyn server::ClientData: Debug, Any, Send, Send
+            dyn server::ClientData: std::fmt::Debug, downcast_rs::DowncastSync
         );
 
         // ObjectId
         assert_impl!(
-            server::ObjectId: Debug,
-            Display,
+            server::ObjectId: std::fmt::Debug,
+            std::fmt::Display,
             Send,
             Sync,
             PartialEq,
@@ -139,13 +134,13 @@ mod server {
         );
 
         // ClientId
-        assert_impl!(server::ClientId: Debug, Clone, Send, Sync, PartialEq, Eq);
+        assert_impl!(server::ClientId: std::fmt::Debug, Clone, Send, Sync, PartialEq, Eq);
 
         // GlobalId
-        assert_impl!(server::GlobalId: Debug, Clone, Send, Sync, PartialEq, Eq);
+        assert_impl!(server::GlobalId: std::fmt::Debug, Clone, Send, Sync, PartialEq, Eq);
 
         // Handle
-        assert_impl!(server::Handle: Debug);
+        assert_impl!(server::Handle: std::fmt::Debug);
 
         // Backend
         assert_impl!(server::Backend<()>: Send, Sync);
@@ -153,22 +148,17 @@ mod server {
 }
 
 mod client {
-    use std::{
-        any::Any,
-        fmt::{Debug, Display},
-    };
-
     #[test]
     fn test_impls() {
         // ObjectData
         assert_impl!(
-            dyn client::ObjectData: Debug, Any, Send, Sync
+            dyn client::ObjectData: std::fmt::Debug, downcast_rs::DowncastSync
         );
 
         // ObjectId
         assert_impl!(
-            client::ObjectId: Debug,
-            Display,
+            client::ObjectId: std::fmt::Debug,
+            std::fmt::Display,
             Clone,
             Send,
             Sync,
@@ -177,6 +167,6 @@ mod client {
         );
 
         // Backend
-        assert_impl!(client::Backend: Send, Sync, Debug);
+        assert_impl!(client::Backend: Send, Sync, std::fmt::Debug);
     }
 }

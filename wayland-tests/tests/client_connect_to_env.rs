@@ -1,7 +1,7 @@
-use wayland_tests::{
-    DumbClientData, TestClient, TestServer, globals, roundtrip, server_ignore_global_impl,
-    server_ignore_impl, wayc, ways,
-};
+#[macro_use]
+mod helpers;
+
+use helpers::{globals, roundtrip, wayc, ways, DumbClientData, TestClient, TestServer};
 
 use ways::protocol::wl_output::WlOutput as ServerOutput;
 
@@ -12,20 +12,18 @@ fn main() {
     server.display.handle().create_global::<ServerData, ServerOutput, _>(1, ());
 
     // client fails to connect if environment is not set
-    // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { ::std::env::remove_var("WAYLAND_DISPLAY") };
+    ::std::env::remove_var("WAYLAND_DISPLAY");
     assert!(wayc::Connection::connect_to_env().is_err());
 
     // setup a listening server
     let listening = ways::ListeningSocket::bind(SOCKET_NAME).unwrap();
 
-    // TODO: Audit that the environment access only happens in single-threaded code.
-    unsafe { ::std::env::set_var("WAYLAND_DISPLAY", SOCKET_NAME) };
+    ::std::env::set_var("WAYLAND_DISPLAY", SOCKET_NAME);
 
     // connect the client
     let mut client = TestClient::new_from_env();
     let mut client_data = ClientHandler::new();
-    client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    client.display.get_registry(&client.event_queue.handle(), ());
 
     // setup server-side
     let client_stream = listening.accept().unwrap().unwrap();
@@ -64,3 +62,7 @@ impl AsMut<globals::GlobalList> for ClientHandler {
         &mut self.globals
     }
 }
+
+wayc::delegate_dispatch!(ClientHandler:
+    [wayc::protocol::wl_registry::WlRegistry: ()] => globals::GlobalList
+);

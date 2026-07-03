@@ -1,5 +1,5 @@
 use std::{
-    os::unix::io::{AsFd, BorrowedFd},
+    os::unix::io::{AsFd, AsRawFd, BorrowedFd},
     os::unix::net::UnixStream,
     sync::Arc,
 };
@@ -10,8 +10,8 @@ use wayland_backend::{
 };
 
 use crate::{
-    Client, Resource,
     global::{GlobalData, GlobalDispatch},
+    Client, Resource,
 };
 
 /// The Wayland display
@@ -123,10 +123,13 @@ impl DisplayHandle {
     /// defined by your [`GlobalDispatch`] implementation for the given interface. Whenever a client
     /// binds this global, the associated [`GlobalDispatch::bind()`] method will be invoked on your
     /// `State`.
-    pub fn create_global<State, I: Resource + 'static, U>(&self, version: u32, data: U) -> GlobalId
+    pub fn create_global<State, I: Resource + 'static, U: Send + Sync + 'static>(
+        &self,
+        version: u32,
+        data: U,
+    ) -> GlobalId
     where
-        State: 'static,
-        U: GlobalDispatch<I, State> + Send + Sync + 'static,
+        State: GlobalDispatch<I, U> + 'static,
     {
         self.handle.create_global::<State>(
             I::interface(),
@@ -175,6 +178,7 @@ impl DisplayHandle {
         event: I::Event<'_>,
     ) -> Result<(), InvalidId> {
         let msg = resource.write_event(self, event)?;
+        let msg = msg.map_fd(|fd| fd.as_raw_fd());
         self.handle.send_event(msg)
     }
 

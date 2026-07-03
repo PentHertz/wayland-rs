@@ -24,9 +24,10 @@
 //! `Dispatch<O, _>` for every Wayland object `O` it needs to process events for.
 //!
 //! However, implementing all those traits on your own is a lot of (often uninteresting) work. To make this
-//! easier a another library (such as Smithay) can provide generic [`Dispatch`] implementations that you
-//! for a user-data type it defines, so can reuse on your own app. See the documentation of those traits
-//! for details.
+//! easier a composition mechanism is provided using the [`delegate_dispatch!()`] macro. This way, another
+//! library (such as Smithay) can provide generic [`Dispatch`] implementations that you can reuse on your
+//! own app by delegating those objects to that provided implementation. See the documentation of those
+//! traits and macro for details.
 //!
 //! ## Globals
 //!
@@ -106,6 +107,8 @@ pub mod backend {
     pub use wayland_backend::smallvec;
 }
 
+pub use wayland_backend::protocol::WEnum;
+
 /// Generated protocol definitions
 ///
 /// This module is automatically generated from the `wayland.xml` protocol specification, and contains the
@@ -131,7 +134,7 @@ use std::{
 };
 
 /// Trait representing a Wayland interface
-pub trait Resource: Clone + std::fmt::Debug + Sized + 'static {
+pub trait Resource: Clone + std::fmt::Debug + Sized {
     /// The event enum for this interface
     type Event<'a>;
     /// The request enum for this interface
@@ -167,9 +170,7 @@ pub trait Resource: Clone + std::fmt::Debug + Sized + 'static {
     }
 
     /// Access the user-data associated with this object
-    fn data<U: 'static>(&self) -> Option<&U> {
-        Some(&self.object_data()?.downcast_ref::<ResourceData<Self, U>>()?.udata)
-    }
+    fn data<U: 'static>(&self) -> Option<&U>;
 
     /// Access the raw data associated with this object.
     ///
@@ -191,10 +192,7 @@ pub trait Resource: Clone + std::fmt::Debug + Sized + 'static {
     fn from_id(dh: &DisplayHandle, id: ObjectId) -> Result<Self, InvalidId>;
 
     /// Send an event to this object
-    fn send_event(&self, evt: Self::Event<'_>) -> Result<(), InvalidId> {
-        let handle = DisplayHandle::from(self.handle().upgrade().ok_or(InvalidId)?);
-        handle.send_event(self, evt)
-    }
+    fn send_event(&self, evt: Self::Event<'_>) -> Result<(), InvalidId>;
 
     /// Trigger a protocol error on this object
     ///

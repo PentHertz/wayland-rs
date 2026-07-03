@@ -1,10 +1,13 @@
+extern crate tempfile;
+
 use std::fs::File;
 use std::io::{Read, Seek, Write};
 use std::os::unix::io::{AsFd, OwnedFd};
 
-use wayland_tests::{
-    TestServer, globals, roundtrip, server_ignore_global_impl, server_ignore_impl, wayc, ways,
-};
+#[macro_use]
+mod helpers;
+
+use helpers::{globals, roundtrip, wayc, ways, TestServer};
 
 use wayc::protocol::wl_shm::Format;
 
@@ -26,8 +29,7 @@ fn attach_null() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler { globals: globals::GlobalList::new() };
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     // Initial sync
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
@@ -38,10 +40,10 @@ fn attach_null() {
             &client.event_queue.handle(),
             &registry,
             1..=1,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
-    let surface = compositor.create_surface(&client.event_queue.handle(), wayc::NoopIgnore);
+    let surface = compositor.create_surface(&client.event_queue.handle(), ());
     surface.attach(None, 0, 0);
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
@@ -66,8 +68,7 @@ fn attach_buffer() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler { globals: globals::GlobalList::new() };
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     // Initial sync
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
@@ -78,23 +79,15 @@ fn attach_buffer() {
             &client.event_queue.handle(),
             &registry,
             1..=1,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
 
     let mut file = tempfile::tempfile().unwrap();
     write!(file, "I like trains!").unwrap();
     file.flush().unwrap();
-    let pool = shm.create_pool(file.as_fd(), 42, &client.event_queue.handle(), wayc::NoopIgnore);
-    let buffer = pool.create_buffer(
-        0,
-        0,
-        0,
-        0,
-        Format::Argb8888,
-        &client.event_queue.handle(),
-        wayc::NoopIgnore,
-    );
+    let pool = shm.create_pool(file.as_fd(), 42, &client.event_queue.handle(), ());
+    let buffer = pool.create_buffer(0, 0, 0, 0, Format::Argb8888, &client.event_queue.handle(), ());
 
     let compositor = client_ddata
         .globals
@@ -102,10 +95,10 @@ fn attach_buffer() {
             &client.event_queue.handle(),
             &registry,
             1..=1,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
-    let surface = compositor.create_surface(&client.event_queue.handle(), wayc::NoopIgnore);
+    let surface = compositor.create_surface(&client.event_queue.handle(), ());
     surface.attach(Some(&buffer), 0, 0);
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
@@ -131,15 +124,15 @@ struct ServerHandler {
     fd_found: Option<(OwnedFd, Option<ServerBuffer>)>,
 }
 
-impl ways::Dispatch<ways::protocol::wl_compositor::WlCompositor, ServerHandler> for () {
+impl ways::Dispatch<ways::protocol::wl_compositor::WlCompositor, ()> for ServerHandler {
     fn request(
-        &self,
-        _: &mut ServerHandler,
+        _: &mut Self,
         _: &ways::Client,
         _: &ways::protocol::wl_compositor::WlCompositor,
         request: ways::protocol::wl_compositor::Request,
+        _: &(),
         _: &ways::DisplayHandle,
-        init: &mut ways::DataInit<'_, ServerHandler>,
+        init: &mut ways::DataInit<'_, Self>,
     ) {
         if let ways::protocol::wl_compositor::Request::CreateSurface { id } = request {
             init.init(id, ());
@@ -149,15 +142,15 @@ impl ways::Dispatch<ways::protocol::wl_compositor::WlCompositor, ServerHandler> 
     }
 }
 
-impl ways::Dispatch<ways::protocol::wl_surface::WlSurface, ServerHandler> for () {
+impl ways::Dispatch<ways::protocol::wl_surface::WlSurface, ()> for ServerHandler {
     fn request(
-        &self,
-        state: &mut ServerHandler,
+        state: &mut Self,
         _: &ways::Client,
         _: &ways::protocol::wl_surface::WlSurface,
         request: ways::protocol::wl_surface::Request,
+        _: &(),
         _: &ways::DisplayHandle,
-        _: &mut ways::DataInit<'_, ServerHandler>,
+        _: &mut ways::DataInit<'_, Self>,
     ) {
         if let ways::protocol::wl_surface::Request::Attach { buffer, x, y } = request {
             assert_eq!(x, 0);
@@ -170,15 +163,15 @@ impl ways::Dispatch<ways::protocol::wl_surface::WlSurface, ServerHandler> for ()
     }
 }
 
-impl ways::Dispatch<ways::protocol::wl_shm::WlShm, ServerHandler> for () {
+impl ways::Dispatch<ways::protocol::wl_shm::WlShm, ()> for ServerHandler {
     fn request(
-        &self,
-        state: &mut ServerHandler,
+        state: &mut Self,
         _: &ways::Client,
         _: &ways::protocol::wl_shm::WlShm,
         request: ways::protocol::wl_shm::Request,
+        _: &(),
         _: &ways::DisplayHandle,
-        init: &mut ways::DataInit<'_, ServerHandler>,
+        init: &mut ways::DataInit<'_, Self>,
     ) {
         if let ways::protocol::wl_shm::Request::CreatePool { fd, size, id } = request {
             assert_eq!(size, 42);
@@ -191,15 +184,15 @@ impl ways::Dispatch<ways::protocol::wl_shm::WlShm, ServerHandler> for () {
     }
 }
 
-impl ways::Dispatch<ways::protocol::wl_shm_pool::WlShmPool, ServerHandler> for () {
+impl ways::Dispatch<ways::protocol::wl_shm_pool::WlShmPool, ()> for ServerHandler {
     fn request(
-        &self,
-        state: &mut ServerHandler,
+        state: &mut Self,
         _: &ways::Client,
         _: &ways::protocol::wl_shm_pool::WlShmPool,
         request: ways::protocol::wl_shm_pool::Request,
+        _: &(),
         _: &ways::DisplayHandle,
-        init: &mut ways::DataInit<'_, ServerHandler>,
+        init: &mut ways::DataInit<'_, Self>,
     ) {
         if let ways::protocol::wl_shm_pool::Request::CreateBuffer { id, .. } = request {
             let fd_found = state.fd_found.as_mut().unwrap();
@@ -230,3 +223,15 @@ impl AsMut<globals::GlobalList> for ClientHandler {
         &mut self.globals
     }
 }
+
+wayc::delegate_dispatch!(ClientHandler:
+    [wayc::protocol::wl_registry::WlRegistry: ()] => globals::GlobalList
+);
+
+client_ignore_impl!(ClientHandler => [
+    wayc::protocol::wl_compositor::WlCompositor,
+    wayc::protocol::wl_surface::WlSurface,
+    wayc::protocol::wl_shm::WlShm,
+    wayc::protocol::wl_shm_pool::WlShmPool,
+    wayc::protocol::wl_buffer::WlBuffer
+]);

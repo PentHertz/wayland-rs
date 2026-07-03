@@ -63,14 +63,10 @@ impl client::ObjectId {
 
     /// Get the underlying libwayland pointer for this object
     ///
-    /// # Errors
-    ///
-    /// This function returns an [`InvalidId`][client::InvalidId] error if proxy has already
-    /// been destroyed.
-    pub fn as_ptr(
-        &self,
-    ) -> Result<std::ptr::NonNull<wayland_sys::client::wl_proxy>, client::InvalidId> {
-        self.id.as_ptr()
+    /// Returns `NULL` if the proxy has already been destroyed.
+    // TODO(breaking): Return `Result`
+    pub fn as_ptr(&self) -> *mut wayland_sys::client::wl_proxy {
+        self.id.as_ptr().map_or(std::ptr::null_mut(), |p| p.as_ptr())
     }
 
     /// Get the underlying display pointer for this object.
@@ -149,6 +145,19 @@ impl client::ReadEventsGuard {
     }
 }
 
+// SAFETY:
+// - The display_ptr will not change for the lifetime of the backend.
+// - The display_ptr will be valid, either because we have created the pointer or the caller which created the
+//   backend has ensured the pointer is valid when `Backend::from_foreign_display` was called.
+#[cfg(feature = "raw-window-handle")]
+unsafe impl raw_window_handle::HasRawDisplayHandle for client::Backend {
+    fn raw_display_handle(&self) -> raw_window_handle::RawDisplayHandle {
+        let mut handle = raw_window_handle::WaylandDisplayHandle::empty();
+        handle.display = self.display_ptr().cast();
+        raw_window_handle::RawDisplayHandle::Wayland(handle)
+    }
+}
+
 #[cfg(all(feature = "rwh_06", feature = "client_system"))]
 impl rwh_06::HasDisplayHandle for client::Backend {
     fn display_handle(&self) -> Result<rwh_06::DisplayHandle<'_>, rwh_06::HandleError> {
@@ -202,14 +211,10 @@ impl server::ObjectId {
     ///
     /// The pointer may be used to interoperate with libwayland.
     ///
-    /// # Errors
-    ///
-    /// This function returns an [`InvalidId`][server::InvalidId] error if resource has already
-    /// been destroyed.
-    pub fn as_ptr(
-        &self,
-    ) -> Result<std::ptr::NonNull<wayland_sys::server::wl_resource>, server::InvalidId> {
-        self.id.as_ptr()
+    /// Returns `NULL` if the resource has already been destroyed.
+    // TODO(breaking): Return `Result`
+    pub fn as_ptr(&self) -> *mut wayland_sys::server::wl_resource {
+        self.id.as_ptr().map_or(std::ptr::null_mut(), |p| p.as_ptr())
     }
 }
 

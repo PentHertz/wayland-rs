@@ -1,6 +1,7 @@
-use wayland_tests::{
-    TestServer, globals, roundtrip, server_ignore_global_impl, server_ignore_impl, wayc, ways,
-};
+#[macro_use]
+mod helpers;
+
+use helpers::{globals, roundtrip, wayc, ways, TestServer};
 
 use ways::Resource;
 
@@ -18,8 +19,7 @@ fn proxy_equals() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
@@ -63,8 +63,7 @@ fn proxy_user_data() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
@@ -109,8 +108,7 @@ fn dead_proxies() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
@@ -120,7 +118,7 @@ fn dead_proxies() {
             &client.event_queue.handle(),
             &registry,
             3..=3,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
 
@@ -158,8 +156,7 @@ fn dead_object_argument() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler::new();
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_ddata).unwrap();
 
@@ -169,7 +166,7 @@ fn dead_object_argument() {
             &client.event_queue.handle(),
             &registry,
             3..=3,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
     let compositor = client_ddata
@@ -194,29 +191,29 @@ struct ServerHandler {
     output: Option<ways::protocol::wl_output::WlOutput>,
 }
 
-impl ways::GlobalDispatch<ways::protocol::wl_output::WlOutput, ServerHandler> for () {
+impl ways::GlobalDispatch<ways::protocol::wl_output::WlOutput, ()> for ServerHandler {
     fn bind(
-        &self,
-        state: &mut ServerHandler,
+        state: &mut Self,
         _: &ways::DisplayHandle,
         _: &ways::Client,
         output: ways::New<ways::protocol::wl_output::WlOutput>,
-        data_init: &mut ways::DataInit<'_, ServerHandler>,
+        _: &(),
+        data_init: &mut ways::DataInit<'_, Self>,
     ) {
         let output = data_init.init(output, ());
         state.output = Some(output);
     }
 }
 
-impl ways::Dispatch<ways::protocol::wl_compositor::WlCompositor, ServerHandler> for () {
+impl ways::Dispatch<ways::protocol::wl_compositor::WlCompositor, ()> for ServerHandler {
     fn request(
-        &self,
-        state: &mut ServerHandler,
+        state: &mut Self,
         _: &ways::Client,
         _: &ways::protocol::wl_compositor::WlCompositor,
         request: ways::protocol::wl_compositor::Request,
+        _: &(),
         dhandle: &ways::DisplayHandle,
-        data_init: &mut ways::DataInit<'_, ServerHandler>,
+        data_init: &mut ways::DataInit<'_, Self>,
     ) {
         if let ways::protocol::wl_compositor::Request::CreateSurface { id } = request {
             let surface = data_init.init(id, ());
@@ -253,26 +250,30 @@ impl AsMut<globals::GlobalList> for ClientHandler {
     }
 }
 
-impl wayc::Dispatch<wayc::protocol::wl_compositor::WlCompositor, ClientHandler> for usize {
+wayc::delegate_dispatch!(ClientHandler:
+    [wayc::protocol::wl_registry::WlRegistry: ()] => globals::GlobalList
+);
+
+impl wayc::Dispatch<wayc::protocol::wl_compositor::WlCompositor, usize> for ClientHandler {
     fn event(
-        &self,
-        _: &mut ClientHandler,
+        _: &mut Self,
         _: &wayc::protocol::wl_compositor::WlCompositor,
         _: wayc::protocol::wl_compositor::Event,
+        _: &usize,
         _: &wayc::Connection,
-        _: &wayc::QueueHandle<ClientHandler>,
+        _: &wayc::QueueHandle<Self>,
     ) {
     }
 }
 
-impl wayc::Dispatch<wayc::protocol::wl_surface::WlSurface, ClientHandler> for () {
+impl wayc::Dispatch<wayc::protocol::wl_surface::WlSurface, ()> for ClientHandler {
     fn event(
-        &self,
-        state: &mut ClientHandler,
+        state: &mut Self,
         _: &wayc::protocol::wl_surface::WlSurface,
         event: wayc::protocol::wl_surface::Event,
+        _: &(),
         conn: &wayc::Connection,
-        _: &wayc::QueueHandle<ClientHandler>,
+        _: &wayc::QueueHandle<Self>,
     ) {
         if let wayc::protocol::wl_surface::Event::Enter { output } = event {
             assert!(conn.get_object_data(output.id()).is_err());
@@ -282,3 +283,7 @@ impl wayc::Dispatch<wayc::protocol::wl_surface::WlSurface, ClientHandler> for ()
         }
     }
 }
+
+client_ignore_impl!(ClientHandler => [
+    wayc::protocol::wl_output::WlOutput
+]);

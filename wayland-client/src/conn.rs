@@ -1,12 +1,12 @@
 use std::{
     env, fmt,
     io::ErrorKind,
-    os::unix::io::{AsFd, BorrowedFd, FromRawFd, OwnedFd},
+    os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd},
     os::unix::net::UnixStream,
     path::PathBuf,
     sync::{
-        Arc,
         atomic::{AtomicBool, Ordering},
+        Arc,
     },
 };
 
@@ -15,7 +15,7 @@ use wayland_backend::{
     protocol::{ObjectInfo, ProtocolError},
 };
 
-use crate::{EventQueue, Proxy, protocol::wl_display::WlDisplay};
+use crate::{protocol::wl_display::WlDisplay, EventQueue, Proxy};
 
 /// The Wayland connection
 ///
@@ -49,8 +49,7 @@ impl Connection {
             let fd = txt.parse::<i32>().map_err(|_| ConnectError::InvalidFd)?;
             let fd = unsafe { OwnedFd::from_raw_fd(fd) };
             // remove the variable so any child processes don't see it
-            // TODO: Audit that the environment access only happens in single-threaded code.
-            unsafe { env::remove_var("WAYLAND_SOCKET") };
+            env::remove_var("WAYLAND_SOCKET");
             // set the CLOEXEC flag on this FD
             let flags = rustix::io::fcntl_getfd(&fd);
             let result = flags
@@ -198,6 +197,7 @@ impl Connection {
         data: Option<Arc<dyn ObjectData>>,
     ) -> Result<ObjectId, InvalidId> {
         let (msg, child_spec) = proxy.write_request(self, request)?;
+        let msg = msg.map_fd(|fd| fd.as_raw_fd());
         self.backend.send_request(msg, data, child_spec)
     }
 

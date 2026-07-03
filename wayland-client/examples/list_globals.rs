@@ -1,4 +1,4 @@
-use wayland_client::{Connection, Dispatch, QueueHandle, protocol::wl_registry};
+use wayland_client::{protocol::wl_registry, Connection, Dispatch, QueueHandle};
 
 // This struct represents the state of our app. This simple app does not
 // need any state, by this type still supports the `Dispatch` implementations.
@@ -14,12 +14,12 @@ struct AppData;
 //
 // In this example, we just use () as we don't have any value to associate. See
 // the `Dispatch` documentation for more details about this.
-impl Dispatch<wl_registry::WlRegistry, AppData> for () {
+impl Dispatch<wl_registry::WlRegistry, ()> for AppData {
     fn event(
-        &self,
-        _: &mut AppData,
+        _: &mut Self,
         _: &wl_registry::WlRegistry,
         event: wl_registry::Event,
+        _: &(),
         _: &Connection,
         _: &QueueHandle<AppData>,
     ) {

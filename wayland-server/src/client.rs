@@ -1,11 +1,11 @@
-use std::{any::Any, sync::Arc};
+use std::sync::Arc;
 
 use wayland_backend::{
     protocol::ProtocolError,
     server::{ClientData, ClientId, DisconnectReason, InvalidId, ObjectData},
 };
 
-use crate::{Dispatch, DisplayHandle, Resource, dispatch::ResourceData};
+use crate::{dispatch::ResourceData, Dispatch, DisplayHandle, Resource};
 
 /// A struct representing a Wayland client connected to your compositor.
 #[derive(Clone, Debug)]
@@ -29,7 +29,7 @@ impl Client {
     ///
     /// Returns [`None`] if the provided `Data` type parameter is not the correct one.
     pub fn get_data<Data: ClientData + 'static>(&self) -> Option<&Data> {
-        (&*self.data as &dyn Any).downcast_ref()
+        (*self.data).downcast_ref()
     }
 
     /// Access the pid/uid/gid of this client
@@ -51,22 +51,21 @@ impl Client {
     /// The newly created resource should be immediately sent to the client through an associated event with
     /// a `new_id` argument. Not doing so risks corrupting the protocol state and causing protocol errors at
     /// a later time.
-    pub fn create_resource<I, U, D>(
+    pub fn create_resource<
+        I: Resource + 'static,
+        U: Send + Sync + 'static,
+        D: Dispatch<I, U> + 'static,
+    >(
         &self,
         handle: &DisplayHandle,
         version: u32,
         user_data: U,
-    ) -> Result<I, InvalidId>
-    where
-        I: Resource + 'static,
-        U: Dispatch<I, D> + Send + Sync + 'static,
-        D: 'static,
-    {
+    ) -> Result<I, InvalidId> {
         let id = handle.handle.create_object::<D>(
             self.id.clone(),
             I::interface(),
             version,
-            Arc::new(ResourceData::<I, U>::new(user_data)),
+            Arc::new(ResourceData::<I, U>::new(user_data)) as Arc<_>,
         )?;
         I::from_id(handle, id)
     }

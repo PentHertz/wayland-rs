@@ -1,20 +1,8 @@
 //! Types and utilities for manipulating the Wayland protocol
 
-use std::{
-    ffi::{CStr, CString},
-    os::unix::io::AsRawFd,
-};
+use std::{ffi::CString, os::unix::io::AsRawFd};
 
-#[cfg(any(feature = "client_system", feature = "server_system"))]
-use wayland_sys::common::{wl_interface, wl_message};
-
-// Zero-size placeholder with same auto traits, for consistency
-#[cfg(not(any(feature = "client_system", feature = "server_system")))]
-#[allow(non_camel_case_types)]
-type wl_interface = std::marker::PhantomData<*const ()>;
-#[allow(non_camel_case_types)]
-#[cfg(not(any(feature = "client_system", feature = "server_system")))]
-type wl_message = std::marker::PhantomData<*const ()>;
+pub use wayland_sys::common::{wl_argument, wl_interface, wl_message};
 
 /// Describes whether an argument may have a null value.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -163,81 +151,7 @@ pub struct Interface {
     /// A list that describes every event this interface supports.
     pub events: &'static [MessageDesc],
     /// A C representation of this interface that may be used to interoperate with libwayland.
-    pub c_interface: Option<&'static CWlInterface>,
-}
-
-/// Wrapper around `wl_interface` used in libwayland to define interfaces
-#[derive(Debug)]
-#[repr(transparent)]
-pub struct CWlInterface(pub(crate) wl_interface);
-
-unsafe impl Sync for CWlInterface {}
-
-impl CWlInterface {
-    /// Construct a `wl_interface` to store in a static
-    #[cfg(any(feature = "client_system", feature = "server_system"))]
-    pub const fn new(
-        name: &'static CStr,
-        version: u32,
-        requests: &'static [CWlMessage],
-        events: &'static [CWlMessage],
-    ) -> Self {
-        Self(wl_interface {
-            name: name.as_ptr(),
-            version: version as _,
-            request_count: requests.len() as _,
-            requests: requests.as_ptr() as _,
-            event_count: events.len() as _,
-            events: events.as_ptr() as _,
-        })
-    }
-
-    /// Construct a `wl_interface` to store in a static
-    #[cfg(not(any(feature = "client_system", feature = "server_system")))]
-    pub const fn new(
-        name: &'static CStr,
-        version: u32,
-        requests: &'static [CWlMessage],
-        events: &'static [CWlMessage],
-    ) -> Self {
-        let _ = (name, version, requests, events);
-        Self(std::marker::PhantomData)
-    }
-}
-
-/// Wrapper around `wl_message` used in libwayland to define messages in interfaces
-#[allow(missing_debug_implementations)]
-#[repr(transparent)]
-pub struct CWlMessage(wl_message);
-
-unsafe impl Sync for CWlMessage {}
-
-impl CWlMessage {
-    /// Construct a `wl_message` to store in a static
-    #[cfg(any(feature = "client_system", feature = "server_system"))]
-    pub const fn new(
-        name: &'static CStr,
-        signature: &'static CStr,
-        // `Option<&wl_interface>` has the same repr as `*const wl_interface`
-        types: &'static [Option<&'static CWlInterface>],
-    ) -> Self {
-        Self(wl_message {
-            name: name.as_ptr(),
-            signature: signature.as_ptr(),
-            types: types.as_ptr() as *const *const wl_interface,
-        })
-    }
-
-    /// Construct a `wl_message` to store in a static
-    #[cfg(not(any(feature = "client_system", feature = "server_system")))]
-    pub const fn new(
-        name: &'static CStr,
-        signature: &'static CStr,
-        types: &'static [Option<&'static CWlInterface>],
-    ) -> Self {
-        let _ = (name, signature, types);
-        Self(std::marker::PhantomData)
-    }
+    pub c_ptr: Option<&'static wayland_sys::common::wl_interface>,
 }
 
 impl std::fmt::Display for Interface {
@@ -268,7 +182,7 @@ pub struct MessageDesc {
 
 /// Special interface representing an anonymous object
 pub static ANONYMOUS_INTERFACE: Interface =
-    Interface { name: "<anonymous>", version: 0, requests: &[], events: &[], c_interface: None };
+    Interface { name: "<anonymous>", version: 0, requests: &[], events: &[], c_ptr: None };
 
 /// Description of the protocol-level information of an object
 #[derive(Copy, Clone, Debug)]
@@ -384,4 +298,70 @@ pub(crate) fn check_for_signature<Id, Fd>(
 #[allow(dead_code)]
 pub(crate) fn same_interface_or_anonymous(a: &'static Interface, b: &'static Interface) -> bool {
     same_interface(a, b) || same_interface(a, &ANONYMOUS_INTERFACE)
+}
+
+/// An enum value in the protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WEnum<T> {
+    /// The interpreted value
+    Value(T),
+    /// The stored value does not match one defined by the protocol file
+    Unknown(u32),
+}
+
+/// Error representing an unknown numeric variant for a [`WEnum`]
+#[derive(Debug, Copy, Clone)]
+pub struct WEnumError {
+    typ: &'static str,
+    value: u32,
+}
+
+impl std::error::Error for WEnumError {}
+
+impl std::fmt::Display for WEnumError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Unknown numeric value {} for enum {}", self.value, self.typ)
+    }
+}
+
+impl<T> WEnum<T> {
+    /// Convert this [`WEnum`] into a result
+    ///
+    /// This can be used to take advantage of the numerous helper methods on [`Result`] if you
+    /// don't plan to handle the unknown case of this enum.
+    ///
+    /// You can also use the [`From`] and [`Into`] traits to perform the same conversion.
+    #[inline]
+    pub fn into_result(self) -> Result<T, WEnumError> {
+        match self {
+            Self::Value(v) => Ok(v),
+            Self::Unknown(value) => Err(WEnumError { typ: std::any::type_name::<T>(), value }),
+        }
+    }
+}
+
+impl<T> From<WEnum<T>> for Result<T, WEnumError> {
+    fn from(me: WEnum<T>) -> Self {
+        me.into_result()
+    }
+}
+
+impl<T: TryFrom<u32>> From<u32> for WEnum<T> {
+    /// Constructs an enum from the integer format used by the wayland protocol.
+    fn from(v: u32) -> Self {
+        match T::try_from(v) {
+            Ok(t) => Self::Value(t),
+            Err(_) => Self::Unknown(v),
+        }
+    }
+}
+
+impl<T: Into<u32>> From<WEnum<T>> for u32 {
+    /// Converts an enum into a numerical form used by the wayland protocol.
+    fn from(enu: WEnum<T>) -> u32 {
+        match enu {
+            WEnum::Unknown(u) => u,
+            WEnum::Value(t) => t.into(),
+        }
+    }
 }

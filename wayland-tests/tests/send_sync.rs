@@ -1,4 +1,5 @@
-use wayland_tests::{wayc, ways};
+extern crate wayland_client as wayc;
+extern crate wayland_server as ways;
 
 fn ensure_both<I: Send + Sync>() {}
 

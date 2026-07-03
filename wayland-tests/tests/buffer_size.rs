@@ -1,6 +1,9 @@
 use std::io::ErrorKind;
 
-use wayland_tests::*;
+#[macro_use]
+mod helpers;
+
+use helpers::*;
 
 #[test]
 fn buffer_size() {
@@ -13,8 +16,7 @@ fn buffer_size() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler { globals: globals::GlobalList::new() };
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     let mut server_handler = ServerHandler::default();
 
@@ -26,11 +28,11 @@ fn buffer_size() {
             &client.event_queue.handle(),
             &registry,
             1..=1,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
 
-    let _pointer = seat.get_pointer(&client.event_queue.handle(), wayc::NoopIgnore);
+    let _pointer = seat.get_pointer(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_handler).unwrap();
 
@@ -63,8 +65,7 @@ fn buffer_size_client() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler { globals: globals::GlobalList::new() };
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     let mut server_handler = ServerHandler::default();
 
@@ -76,11 +77,11 @@ fn buffer_size_client() {
             &client.event_queue.handle(),
             &registry,
             1..=1,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
 
-    let pointer = seat.get_pointer(&client.event_queue.handle(), wayc::NoopIgnore);
+    let pointer = seat.get_pointer(&client.event_queue.handle(), ());
 
     // Send too many Wayland events to buffer for default server buffer
     for _ in 0..10_000 {
@@ -114,8 +115,7 @@ fn buffer_size_increase() {
     let (_, mut client) = server.add_client();
     let mut client_ddata = ClientHandler { globals: globals::GlobalList::new() };
 
-    let registry =
-        client.display.get_registry(&client.event_queue.handle(), globals::GlobalListData);
+    let registry = client.display.get_registry(&client.event_queue.handle(), ());
 
     let mut server_handler = ServerHandler::default();
 
@@ -127,11 +127,11 @@ fn buffer_size_increase() {
             &client.event_queue.handle(),
             &registry,
             1..=1,
-            wayc::NoopIgnore,
+            (),
         )
         .unwrap();
 
-    let _pointer = seat.get_pointer(&client.event_queue.handle(), wayc::NoopIgnore);
+    let _pointer = seat.get_pointer(&client.event_queue.handle(), ());
 
     roundtrip(&mut client, &mut server, &mut client_ddata, &mut server_handler).unwrap();
 
@@ -158,6 +158,16 @@ impl AsMut<globals::GlobalList> for ClientHandler {
     }
 }
 
+wayc::delegate_dispatch!(ClientHandler:
+    [wayc::protocol::wl_registry::WlRegistry: ()] => globals::GlobalList
+);
+
+client_ignore_impl!(ClientHandler => [
+    wayc::protocol::wl_seat::WlSeat,
+    wayc::protocol::wl_pointer::WlPointer,
+    wayc::protocol::wl_keyboard::WlKeyboard
+]);
+
 /*
  * Server handler
  */
@@ -171,13 +181,13 @@ server_ignore_impl!(ServerHandler => [ways::protocol::wl_pointer::WlPointer]);
 
 server_ignore_global_impl!(ServerHandler => [ways::protocol::wl_seat::WlSeat]);
 
-impl ways::Dispatch<ways::protocol::wl_seat::WlSeat, ServerHandler> for () {
+impl ways::Dispatch<ways::protocol::wl_seat::WlSeat, ()> for ServerHandler {
     fn request(
-        &self,
         server_handler: &mut ServerHandler,
         _: &ways::Client,
         _: &ways::protocol::wl_seat::WlSeat,
         request: ways::protocol::wl_seat::Request,
+        _: &(),
         _: &ways::DisplayHandle,
         data_init: &mut ways::DataInit<'_, ServerHandler>,
     ) {

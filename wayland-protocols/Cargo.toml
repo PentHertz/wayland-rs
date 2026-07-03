@@ -1,6 +1,6 @@
 [package]
 name = "wayland-protocols"
-version = "0.32.13"
+version = "0.32.12"
 documentation = "https://docs.rs/wayland-protocols/"
 repository = "https://github.com/smithay/wayland-rs"
 authors = ["Elinor Berger <elinor@safaradeg.net>"]
@@ -8,8 +8,8 @@ license = "MIT"
 keywords = ["wayland", "client", "server", "protocol", "extension"]
 description = "Generated API for the officials wayland protocol extensions"
 categories = ["gui", "api-bindings"]
-edition = "2024"
-rust-version = "1.86"
+edition = "2021"
+rust-version = "1.71"
 readme = "README.md"
 include = [
     "/src/**/*.rs",
